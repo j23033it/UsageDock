@@ -1,0 +1,114 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="86764177-fd47-4e53-88fe-d7f473311b9a" name="taiki@YUGU 2026-08-15 21:31:53" runUser="YUGU\taiki" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-15T21:31:53.1351995+09:00" queuing="2026-08-15T21:31:53.1352001+09:00" start="2026-08-15T21:31:48.0960594+09:00" finish="2026-08-15T21:31:53.1666497+09:00" />
+  <TestSettings name="default" id="6846569d-1108-48ad-8c8c-244bf5390a95">
+    <Deployment runDeploymentRoot="taiki_YUGU_2026-08-15_21_31_53" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="815107da-96f9-4565-a0d8-e80052e6c0fa" testId="7c6f3f22-7be6-88d9-fa48-7cd882bd59c4" testName="CodexBar.Tests.CodexSessionWatcherTests.ParsesRealisticTokenCountEvent" computerName="YUGU" duration="00:00:00.0081686" startTime="2026-08-15T21:31:53.0542031+09:00" endTime="2026-08-15T21:31:53.0542383+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="815107da-96f9-4565-a0d8-e80052e6c0fa" />
+    <UnitTestResult executionId="0885314c-253a-4107-ad85-cd5d48529611" testId="a25c4ca9-7c06-3ecd-2e19-3832c0fd16d1" testName="CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyUsedPercent" computerName="YUGU" duration="00:00:00.0002700" startTime="2026-08-15T21:31:53.0534383+09:00" endTime="2026-08-15T21:31:53.0535129+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0885314c-253a-4107-ad85-cd5d48529611">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.True() Failure&#xD;
+Expected: True&#xD;
+Actual:   False</Message>
+          <StackTrace>   at CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyUsedPercent() in C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\CodexSessionWatcherTests.cs:line 76&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.RuntimeMethodInfo.Invoke(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="e3afd330-3947-4a93-b3d8-6cdb0a4b53f3" testId="b5c45108-7b3b-c342-ed9c-7c169febfd24" testName="CodexBar.Tests.CodexSessionWatcherTests.IgnoresMalformedJson" computerName="YUGU" duration="00:00:00.0001762" startTime="2026-08-15T21:31:53.0540664+09:00" endTime="2026-08-15T21:31:53.0541064+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e3afd330-3947-4a93-b3d8-6cdb0a4b53f3" />
+    <UnitTestResult executionId="aabd8581-0169-47f7-bc10-a0b46598e02f" testId="5f10720a-65f8-f6c6-4654-c9a54329149c" testName="CodexBar.Tests.CodexSessionWatcherTests.IgnoresEventWithoutRateLimits" computerName="YUGU" duration="00:00:00.0001451" startTime="2026-08-15T21:31:53.0283267+09:00" endTime="2026-08-15T21:31:53.0283997+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aabd8581-0169-47f7-bc10-a0b46598e02f" />
+    <UnitTestResult executionId="eae5af0f-4a67-40f0-ab0c-0963a8e2636f" testId="373b3499-dc4f-f75b-010d-576fe2cb44cf" testName="CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyResetsAt" computerName="YUGU" duration="00:00:00.0069899" startTime="2026-08-15T21:31:53.0285199+09:00" endTime="2026-08-15T21:31:53.0459770+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="eae5af0f-4a67-40f0-ab0c-0963a8e2636f">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.True() Failure&#xD;
+Expected: True&#xD;
+Actual:   False</Message>
+          <StackTrace>   at CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyResetsAt() in C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\CodexSessionWatcherTests.cs:line 92&#xD;
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+   at System.Reflection.RuntimeMethodInfo.Invoke(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1125057d-b501-401c-8661-e25d3908d079" testId="a7ed4d90-733b-2bbd-2f65-334c902e0d4d" testName="CodexBar.Tests.CodexSessionWatcherTests.IgnoresNonTokenCountEvents" computerName="YUGU" duration="00:00:00.6757265" startTime="2026-08-15T21:31:52.3903119+09:00" endTime="2026-08-15T21:31:53.0252039+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1125057d-b501-401c-8661-e25d3908d079" />
+    <UnitTestResult executionId="9be7b29b-fda3-4f43-bf7a-09b414815845" testId="6291b4a0-8530-d980-c741-d6523d9ecffc" testName="CodexBar.Tests.UnitTest1.Test1" computerName="YUGU" duration="00:00:00.0014871" startTime="2026-08-15T21:31:52.3915164+09:00" endTime="2026-08-15T21:31:52.3922870+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9be7b29b-fda3-4f43-bf7a-09b414815845" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="CodexBar.Tests.CodexSessionWatcherTests.ParsesRealisticTokenCountEvent" storage="c:\users\taiki\documents\codexbar\codexbar.tests\bin\debug\net10.0-windows\codexbar.tests.dll" id="7c6f3f22-7be6-88d9-fa48-7cd882bd59c4">
+      <Execution id="815107da-96f9-4565-a0d8-e80052e6c0fa" />
+      <TestMethod codeBase="C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\bin\Debug\net10.0-windows\CodexBar.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="CodexBar.Tests.CodexSessionWatcherTests" name="ParsesRealisticTokenCountEvent" />
+    </UnitTest>
+    <UnitTest name="CodexBar.Tests.UnitTest1.Test1" storage="c:\users\taiki\documents\codexbar\codexbar.tests\bin\debug\net10.0-windows\codexbar.tests.dll" id="6291b4a0-8530-d980-c741-d6523d9ecffc">
+      <Execution id="9be7b29b-fda3-4f43-bf7a-09b414815845" />
+      <TestMethod codeBase="C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\bin\Debug\net10.0-windows\CodexBar.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="CodexBar.Tests.UnitTest1" name="Test1" />
+    </UnitTest>
+    <UnitTest name="CodexBar.Tests.CodexSessionWatcherTests.IgnoresMalformedJson" storage="c:\users\taiki\documents\codexbar\codexbar.tests\bin\debug\net10.0-windows\codexbar.tests.dll" id="b5c45108-7b3b-c342-ed9c-7c169febfd24">
+      <Execution id="e3afd330-3947-4a93-b3d8-6cdb0a4b53f3" />
+      <TestMethod codeBase="C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\bin\Debug\net10.0-windows\CodexBar.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="CodexBar.Tests.CodexSessionWatcherTests" name="IgnoresMalformedJson" />
+    </UnitTest>
+    <UnitTest name="CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyUsedPercent" storage="c:\users\taiki\documents\codexbar\codexbar.tests\bin\debug\net10.0-windows\codexbar.tests.dll" id="a25c4ca9-7c06-3ecd-2e19-3832c0fd16d1">
+      <Execution id="0885314c-253a-4107-ad85-cd5d48529611" />
+      <TestMethod codeBase="C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\bin\Debug\net10.0-windows\CodexBar.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="CodexBar.Tests.CodexSessionWatcherTests" name="ParsesEventWithOnlyUsedPercent" />
+    </UnitTest>
+    <UnitTest name="CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyResetsAt" storage="c:\users\taiki\documents\codexbar\codexbar.tests\bin\debug\net10.0-windows\codexbar.tests.dll" id="373b3499-dc4f-f75b-010d-576fe2cb44cf">
+      <Execution id="eae5af0f-4a67-40f0-ab0c-0963a8e2636f" />
+      <TestMethod codeBase="C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\bin\Debug\net10.0-windows\CodexBar.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="CodexBar.Tests.CodexSessionWatcherTests" name="ParsesEventWithOnlyResetsAt" />
+    </UnitTest>
+    <UnitTest name="CodexBar.Tests.CodexSessionWatcherTests.IgnoresEventWithoutRateLimits" storage="c:\users\taiki\documents\codexbar\codexbar.tests\bin\debug\net10.0-windows\codexbar.tests.dll" id="5f10720a-65f8-f6c6-4654-c9a54329149c">
+      <Execution id="aabd8581-0169-47f7-bc10-a0b46598e02f" />
+      <TestMethod codeBase="C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\bin\Debug\net10.0-windows\CodexBar.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="CodexBar.Tests.CodexSessionWatcherTests" name="IgnoresEventWithoutRateLimits" />
+    </UnitTest>
+    <UnitTest name="CodexBar.Tests.CodexSessionWatcherTests.IgnoresNonTokenCountEvents" storage="c:\users\taiki\documents\codexbar\codexbar.tests\bin\debug\net10.0-windows\codexbar.tests.dll" id="a7ed4d90-733b-2bbd-2f65-334c902e0d4d">
+      <Execution id="1125057d-b501-401c-8661-e25d3908d079" />
+      <TestMethod codeBase="C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\bin\Debug\net10.0-windows\CodexBar.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="CodexBar.Tests.CodexSessionWatcherTests" name="IgnoresNonTokenCountEvents" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="7c6f3f22-7be6-88d9-fa48-7cd882bd59c4" executionId="815107da-96f9-4565-a0d8-e80052e6c0fa" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a25c4ca9-7c06-3ecd-2e19-3832c0fd16d1" executionId="0885314c-253a-4107-ad85-cd5d48529611" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b5c45108-7b3b-c342-ed9c-7c169febfd24" executionId="e3afd330-3947-4a93-b3d8-6cdb0a4b53f3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5f10720a-65f8-f6c6-4654-c9a54329149c" executionId="aabd8581-0169-47f7-bc10-a0b46598e02f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="373b3499-dc4f-f75b-010d-576fe2cb44cf" executionId="eae5af0f-4a67-40f0-ab0c-0963a8e2636f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a7ed4d90-733b-2bbd-2f65-334c902e0d4d" executionId="1125057d-b501-401c-8661-e25d3908d079" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6291b4a0-8530-d980-c741-d6523d9ecffc" executionId="9be7b29b-fda3-4f43-bf7a-09b414815845" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="一覧に存在しない結果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="読み込まれたすべての結果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="7" executed="7" passed="5" failed="2" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.11)&#xD;
+[xUnit.net 00:00:02.91]   Discovering: CodexBar.Tests&#xD;
+[xUnit.net 00:00:02.95]   Discovered:  CodexBar.Tests&#xD;
+[xUnit.net 00:00:02.97]   Starting:    CodexBar.Tests&#xD;
+[xUnit.net 00:00:03.70]       Assert.True() Failure&#xD;
+[xUnit.net 00:00:03.70]       Expected: True&#xD;
+[xUnit.net 00:00:03.70]       Actual:   False&#xD;
+[xUnit.net 00:00:03.70]       Stack Trace:&#xD;
+[xUnit.net 00:00:03.70]         C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\CodexSessionWatcherTests.cs(92,0): at CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyResetsAt()&#xD;
+[xUnit.net 00:00:03.70]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+[xUnit.net 00:00:03.70]            at System.Reflection.RuntimeMethodInfo.Invoke(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)&#xD;
+[xUnit.net 00:00:03.70]       Assert.True() Failure&#xD;
+[xUnit.net 00:00:03.70]       Expected: True&#xD;
+[xUnit.net 00:00:03.70]       Actual:   False&#xD;
+[xUnit.net 00:00:03.70]       Stack Trace:&#xD;
+[xUnit.net 00:00:03.70]         C:\Users\taiki\Documents\CodexBar\CodexBar.Tests\CodexSessionWatcherTests.cs(76,0): at CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyUsedPercent()&#xD;
+[xUnit.net 00:00:03.70]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)&#xD;
+[xUnit.net 00:00:03.70]            at System.Reflection.RuntimeMethodInfo.Invoke(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)&#xD;
+[xUnit.net 00:00:03.71]   Finished:    CodexBar.Tests&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="YUGU" outcome="Error" timestamp="2026-08-15T21:31:53.0499537+09:00">
+        <Text>[xUnit.net 00:00:03.70]     CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyResetsAt [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="YUGU" outcome="Error" timestamp="2026-08-15T21:31:53.0538082+09:00">
+        <Text>[xUnit.net 00:00:03.70]     CodexBar.Tests.CodexSessionWatcherTests.ParsesEventWithOnlyUsedPercent [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
