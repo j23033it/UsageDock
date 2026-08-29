@@ -291,9 +291,31 @@ fn reposition_widget(window: &tauri::WebviewWindow) {
     let Ok(size) = window.inner_size() else {
         return;
     };
-    let x = monitor.position().x + monitor.size().width as i32 - size.width as i32 - 8;
-    let y = monitor.position().y + (monitor.size().height as i32 - size.height as i32) / 2;
+    let (x, y) = widget_position(
+        monitor.position().x,
+        monitor.position().y,
+        monitor.size().width,
+        monitor.size().height,
+        size.width,
+        size.height,
+    );
     let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+fn widget_position(
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: u32,
+    monitor_height: u32,
+    window_width: u32,
+    window_height: u32,
+) -> (i32, i32) {
+    let horizontal_space = monitor_width.saturating_sub(window_width) as i32;
+    let vertical_space = monitor_height.saturating_sub(window_height) as i32;
+    let x = monitor_x + horizontal_space.saturating_sub(8);
+    let centered_y = monitor_y + vertical_space / 2;
+    let upward_offset = (monitor_height as i32 * 8 / 100).min(vertical_space / 2);
+    (x, centered_y - upward_offset)
 }
 
 fn apply_widget_dimensions(
@@ -302,9 +324,9 @@ fn apply_widget_dimensions(
     expanded: bool,
 ) -> Result<(), String> {
     let (collapsed_width, expanded_width, base_height) = match settings.widget_size.as_str() {
-        "s" => (56_u32, 350_u32, 268_u32),
-        "l" => (92_u32, 430_u32, 372_u32),
-        _ => (76_u32, 388_u32, 320_u32),
+        "s" => (46_u32, 284_u32, 220_u32),
+        "l" => (72_u32, 360_u32, 290_u32),
+        _ => (58_u32, 320_u32, 250_u32),
     };
     let base_width = if expanded {
         expanded_width
@@ -606,5 +628,13 @@ mod tests {
         assert!(notices.is_empty());
         assert!(data.refreshing.is_empty());
         assert!(data.snapshot.providers.is_empty());
+    }
+
+    #[test]
+    fn ウィジェットを右端かつ中央より上へ配置する() {
+        let position = widget_position(0, 0, 1920, 1080, 58, 250);
+        assert_eq!(position.0, 1854);
+        assert_eq!(position.1, 329);
+        assert!(position.1 < (1080 - 250) / 2);
     }
 }

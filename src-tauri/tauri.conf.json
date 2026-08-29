@@ -15,8 +15,8 @@
       {
         "label": "widget",
         "title": "UsageDock",
-        "width": 76,
-        "height": 320,
+        "width": 58,
+        "height": 250,
         "resizable": false,
         "maximizable": false,
         "minimizable": false,
