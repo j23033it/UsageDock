@@ -16,11 +16,13 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutoStartManagerExt;
+use tauri_plugin_notification::NotificationExt;
 
 struct BackendData {
     settings: AppSettings,
     snapshot: DashboardSnapshot,
     refreshing: HashSet<ProviderId>,
+    notified: HashSet<(ProviderId, model::WindowKind, u8)>,
 }
 
 #[derive(Clone)]
@@ -110,6 +112,55 @@ fn classify(status: &ProviderUsage) -> ProviderStatus {
     }
 }
 
+fn reached_notification_threshold(
+    remaining: f64,
+    thresholds: &model::NotificationThresholds,
+) -> Option<u8> {
+    if !thresholds.enabled {
+        return None;
+    }
+    [
+        thresholds.exhausted_percent,
+        thresholds.critical_percent,
+        thresholds.warning_percent,
+    ]
+    .into_iter()
+    .find(|threshold| remaining <= f64::from(*threshold))
+}
+
+fn collect_notifications(
+    data: &mut BackendData,
+    id: &ProviderId,
+    windows: &[model::UsageWindow],
+) -> Vec<(String, f64, u8)> {
+    let thresholds = data.settings.notification_thresholds.clone();
+    if !thresholds.enabled {
+        data.notified.retain(|(provider, _, _)| provider != id);
+        return Vec::new();
+    }
+    let configured = [
+        thresholds.exhausted_percent,
+        thresholds.critical_percent,
+        thresholds.warning_percent,
+    ];
+    let mut notices = Vec::new();
+    for window in windows {
+        let Some(remaining) = window.remaining_percent else {
+            continue;
+        };
+        data.notified.retain(|(provider, kind, threshold)| {
+            provider != id || kind != &window.kind || remaining <= f64::from(*threshold)
+        });
+        if let Some(threshold) = reached_notification_threshold(remaining, &thresholds) {
+            let key = (id.clone(), window.kind.clone(), threshold);
+            if configured.contains(&threshold) && data.notified.insert(key) {
+                notices.push((window.label.clone(), remaining, threshold));
+            }
+        }
+    }
+    notices
+}
+
 async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderId) {
     let settings = {
         let mut data = state.data.lock().expect("状態ロック");
@@ -133,17 +184,19 @@ async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderI
             None => Err("OpenCode GoのAPIキーが設定されていません".into()),
         },
     };
-    let snapshot = {
+    let (snapshot, notices) = {
         let mut data = state.data.lock().expect("状態ロック");
         data.refreshing.remove(&id);
-        let provider = data
-            .snapshot
-            .providers
-            .iter_mut()
-            .find(|provider| provider.id == id)
-            .expect("プロバイダー");
+        let mut notices = Vec::new();
         match result {
             Ok(value) => {
+                notices = collect_notifications(&mut data, &id, &value.windows);
+                let provider = data
+                    .snapshot
+                    .providers
+                    .iter_mut()
+                    .find(|provider| provider.id == id)
+                    .expect("プロバイダー");
                 provider.source = value.source;
                 provider.plan_name = value.plan_name;
                 provider.windows = value.windows;
@@ -152,6 +205,12 @@ async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderI
                 provider.status = ProviderStatus::Fresh;
             }
             Err(error) => {
+                let provider = data
+                    .snapshot
+                    .providers
+                    .iter_mut()
+                    .find(|provider| provider.id == id)
+                    .expect("プロバイダー");
                 provider.last_error = Some(error);
                 provider.status = classify(provider);
             }
@@ -159,8 +218,21 @@ async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderI
         data.snapshot.refreshed_at = now_iso();
         reconcile_providers(&mut data);
         state.save_snapshot(&data.snapshot);
-        data.snapshot.clone()
+        (data.snapshot.clone(), notices)
     };
+    for (window, remaining, threshold) in notices {
+        let body = if threshold == 0 {
+            format!("{window}を使い切りました")
+        } else {
+            format!("{window}の残量が{remaining:.0}%です")
+        };
+        let _ = app
+            .notification()
+            .builder()
+            .title(format!("{}の残量通知", id.display_name()))
+            .body(body)
+            .show();
+    }
     let _ = app.emit("usage-updated", &snapshot);
 }
 
@@ -332,6 +404,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -342,6 +415,7 @@ pub fn run() {
                     settings: storage::load_settings(&config_dir.join("settings.json")),
                     snapshot: initial_snapshot(&config_dir.join("snapshot.json")),
                     refreshing: HashSet::new(),
+                    notified: HashSet::new(),
                 })),
                 settings_path: config_dir.join("settings.json"),
                 snapshot_path: config_dir.join("snapshot.json"),
@@ -460,5 +534,14 @@ mod tests {
             classify(&empty_provider(ProviderId::Codex)),
             ProviderStatus::Unavailable
         );
+    }
+
+    #[test]
+    fn 残量に応じて最も強い通知閾値を選ぶ() {
+        let thresholds = model::NotificationThresholds::default();
+        assert_eq!(reached_notification_threshold(21.0, &thresholds), None);
+        assert_eq!(reached_notification_threshold(20.0, &thresholds), Some(20));
+        assert_eq!(reached_notification_threshold(9.0, &thresholds), Some(10));
+        assert_eq!(reached_notification_threshold(0.0, &thresholds), Some(0));
     }
 }
