@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum WindowKind {
     FiveHour,
@@ -13,6 +13,7 @@ pub enum WindowKind {
 #[serde(rename_all = "kebab-case")]
 pub enum ProviderId {
     Codex,
+    #[serde(rename = "opencode-go")]
     OpenCodeGo,
 }
 
@@ -79,14 +80,18 @@ pub struct DashboardSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct NotificationThresholds {
     pub enabled: bool,
-    pub percent: u8,
+    pub warning_percent: u8,
+    pub critical_percent: u8,
+    pub exhausted_percent: u8,
 }
 
 impl Default for NotificationThresholds {
     fn default() -> Self {
         Self {
             enabled: true,
-            percent: 20,
+            warning_percent: 20,
+            critical_percent: 10,
+            exhausted_percent: 0,
         }
     }
 }
@@ -115,9 +120,9 @@ impl Default for AppSettings {
             refresh_interval_seconds: 60,
             widget_size: "m".to_string(),
             scale_percent: 100,
-            opacity_percent: 100,
+            opacity_percent: 96,
             auto_start: false,
-            start_in_background: false,
+            start_in_background: true,
             provider_order: vec![ProviderId::Codex, ProviderId::OpenCodeGo],
             codex_enabled: true,
             open_code_go_enabled: false,
@@ -136,7 +141,19 @@ impl AppSettings {
         if !matches!(self.widget_size.as_str(), "s" | "m" | "l") {
             self.widget_size = "m".to_string();
         }
-        self.notification_thresholds.percent = self.notification_thresholds.percent.clamp(1, 100);
+        self.notification_thresholds.warning_percent =
+            self.notification_thresholds.warning_percent.clamp(1, 100);
+        self.notification_thresholds.critical_percent =
+            self.notification_thresholds.critical_percent.clamp(1, 99);
+        self.notification_thresholds.exhausted_percent = 0;
+        if self.notification_thresholds.critical_percent
+            >= self.notification_thresholds.warning_percent
+        {
+            self.notification_thresholds.critical_percent = self
+                .notification_thresholds
+                .warning_percent
+                .saturating_sub(1);
+        }
         self
     }
 }
@@ -194,7 +211,9 @@ mod tests {
             widget_size: "x".into(),
             notification_thresholds: NotificationThresholds {
                 enabled: true,
-                percent: 0,
+                warning_percent: 0,
+                critical_percent: 100,
+                exhausted_percent: 50,
             },
             ..Default::default()
         }
@@ -203,6 +222,8 @@ mod tests {
         assert_eq!(settings.scale_percent, 150);
         assert_eq!(settings.opacity_percent, 75);
         assert_eq!(settings.widget_size, "m");
-        assert_eq!(settings.notification_thresholds.percent, 1);
+        assert_eq!(settings.notification_thresholds.warning_percent, 1);
+        assert_eq!(settings.notification_thresholds.critical_percent, 0);
+        assert_eq!(settings.notification_thresholds.exhausted_percent, 0);
     }
 }

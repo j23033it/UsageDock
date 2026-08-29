@@ -33,6 +33,7 @@ export type NotificationThresholds = {
   enabled: boolean;
   warningPercent: number;
   criticalPercent: number;
+  exhaustedPercent: 0;
 };
 
 export type AppSettings = {
@@ -62,8 +63,9 @@ export const defaultSettings: AppSettings = {
   openCodeGoEnabled: true,
   notificationThresholds: {
     enabled: true,
-    warningPercent: 49,
-    criticalPercent: 19,
+    warningPercent: 20,
+    criticalPercent: 10,
+    exhaustedPercent: 0,
   },
   codexPath: null,
   forceCompatibilityMode: false,
