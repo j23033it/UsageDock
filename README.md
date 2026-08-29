@@ -2,7 +2,7 @@
 
 CodexとOpenCode Goの残量を、Windows 11の画面右端に固定表示するTauri v2アプリです。
 
-現在は旧WinForms版から、React + TypeScript + Rust構成へ移行中です。確定したMVP仕様は [docs/product-contract.md](docs/product-contract.md) にあります。
+旧WinForms版を置き換え、React + TypeScript + Rust構成で開発しています。確定したMVP仕様は [docs/product-contract.md](docs/product-contract.md) にあります。
 
 ## 開発
 
