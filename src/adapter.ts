@@ -67,7 +67,7 @@ const mockProviders = (): ProviderUsage[] => [
     ],
   },
   {
-    id: "opencode",
+    id: "opencode-go",
     displayName: "OpenCode Go",
     planName: "Go",
     status: "stale",

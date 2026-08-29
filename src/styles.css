@@ -81,7 +81,7 @@ p, small { text-wrap: pretty; }
 .provider-mark { display: block; }
 .provider-mark__circle { fill: var(--surface-raised); stroke: var(--border-strong); stroke-width: 1.2; }
 .provider-mark__circle--codex { stroke: var(--accent); }
-.provider-mark__circle--opencode { stroke: var(--warning); }
+.provider-mark__circle--opencode-go { stroke: var(--warning); }
 .provider-mark__path { fill: none; stroke: var(--text-primary); stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.55; }
 
 .widget-detail { position: fixed; z-index: 9; top: 1rem; right: calc(4.35rem + var(--safe-right)); bottom: calc(1rem + var(--safe-bottom)); display: flex; width: min(28rem, calc(100vw - 5rem)); align-items: center; pointer-events: none; }

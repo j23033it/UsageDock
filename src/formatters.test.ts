@@ -27,13 +27,14 @@ describe("表示ロジック", () => {
   });
 
   it("プロバイダー順を安全に入れ替える", () => {
-    expect(moveProviderOrder(["codex", "opencode"], 1, -1)).toEqual(["opencode", "codex"]);
-    expect(moveProviderOrder(["codex", "opencode"], 0, -1)).toEqual(["codex", "opencode"]);
+    expect(moveProviderOrder(["codex", "opencode-go"], 1, -1)).toEqual(["opencode-go", "codex"]);
+    expect(moveProviderOrder(["codex", "opencode-go"], 0, -1)).toEqual(["codex", "opencode-go"]);
   });
 
-  it("リセット時刻通過後に残量不明なら確認中にする", () => {
+  it("リセット時刻通過後はサーバー再取得まで確認中にする", () => {
     const now = new Date("2026-08-29T10:00:00Z");
     expect(isResetPending({ kind: "daily", label: "日次", usedPercent: null, remainingPercent: null, resetsAt: "2026-08-29T09:00:00Z", windowDurationMinutes: 1440 }, now)).toBe(true);
-    expect(isResetPending({ kind: "daily", label: "日次", usedPercent: 20, remainingPercent: 80, resetsAt: "2026-08-29T09:00:00Z", windowDurationMinutes: 1440 }, now)).toBe(false);
+    expect(isResetPending({ kind: "daily", label: "日次", usedPercent: 20, remainingPercent: 80, resetsAt: "2026-08-29T09:00:00Z", windowDurationMinutes: 1440 }, now)).toBe(true);
+    expect(isResetPending({ kind: "daily", label: "日次", usedPercent: 20, remainingPercent: 80, resetsAt: "2026-08-29T11:00:00Z", windowDurationMinutes: 1440 }, now)).toBe(false);
   });
 });

@@ -55,7 +55,7 @@ export const isResetPending = (usageWindow: UsageWindow, now = new Date()) => {
   if (!usageWindow.resetsAt) return false;
   const resetAt = new Date(usageWindow.resetsAt);
   if (Number.isNaN(resetAt.valueOf()) || resetAt > now) return false;
-  return usageWindow.remainingPercent === null || usageWindow.usedPercent === null || usageWindow.remainingPercent >= 99;
+  return true;
 };
 
 export const moveProviderOrder = (order: string[], index: number, direction: -1 | 1) => {

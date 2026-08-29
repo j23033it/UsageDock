@@ -57,7 +57,7 @@ export const defaultSettings: AppSettings = {
   opacityPercent: 96,
   autoStart: false,
   startInBackground: true,
-  providerOrder: ["codex", "opencode"],
+  providerOrder: ["codex", "opencode-go"],
   codexEnabled: true,
   openCodeGoEnabled: true,
   notificationThresholds: {
