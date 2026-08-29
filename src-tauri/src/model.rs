@@ -9,7 +9,7 @@ pub enum WindowKind {
     Custom,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProviderId {
     Codex,
@@ -84,12 +84,16 @@ pub struct NotificationThresholds {
 
 impl Default for NotificationThresholds {
     fn default() -> Self {
-        Self { enabled: true, percent: 20 }
+        Self {
+            enabled: true,
+            percent: 20,
+        }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[serde(default)]
 pub struct AppSettings {
     pub refresh_interval_seconds: u64,
     pub widget_size: String,
@@ -142,7 +146,9 @@ pub fn now_iso() -> String {
 }
 
 pub fn unix_seconds_to_iso(value: &serde_json::Value) -> Option<String> {
-    let seconds = value.as_i64().or_else(|| value.as_u64().and_then(|v| i64::try_from(v).ok()))?;
+    let seconds = value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|v| i64::try_from(v).ok()))?;
     chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0)
         .map(|date| date.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
 }
@@ -186,7 +192,10 @@ mod tests {
             scale_percent: 200,
             opacity_percent: 1,
             widget_size: "x".into(),
-            notification_thresholds: NotificationThresholds { enabled: true, percent: 0 },
+            notification_thresholds: NotificationThresholds {
+                enabled: true,
+                percent: 0,
+            },
             ..Default::default()
         }
         .clamped();
