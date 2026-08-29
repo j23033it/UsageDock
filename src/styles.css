@@ -80,11 +80,9 @@ p, small { text-wrap: pretty; }
 .usage-ring--critical .usage-ring__value { stroke: var(--critical); }
 .usage-ring--unknown .usage-ring__track { stroke: var(--unknown); stroke-dasharray: 2 4; }
 .usage-ring__mark { position: relative; z-index: 1; display: grid; place-items: center; }
-.provider-mark { display: block; }
-.provider-mark__circle { fill: var(--surface-raised); stroke: var(--border-strong); stroke-width: 1.2; }
-.provider-mark__circle--codex { stroke: var(--accent); }
-.provider-mark__circle--opencode-go { stroke: var(--warning); }
-.provider-mark__path { fill: none; stroke: var(--text-primary); stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.55; }
+.provider-mark { display: block; flex: 0 0 auto; padding: 1px; border: 1px solid var(--border-strong); border-radius: 50%; background: #fff; object-fit: contain; }
+.provider-mark--codex { border-color: rgb(114 168 255 / 70%); }
+.provider-mark--opencode-go { border-color: rgb(232 184 102 / 70%); }
 
 .widget-detail { position: fixed; z-index: 9; top: 1rem; right: calc(var(--rail-width) - .5rem + var(--safe-right)); bottom: calc(1rem + var(--safe-bottom)); display: flex; width: calc(100% - var(--rail-width) + .5rem); align-items: center; pointer-events: none; }
 .widget-detail__content { position: relative; width: 100%; max-height: calc(100vh - 2rem - var(--safe-bottom)); overflow: auto; padding: 1.35rem 1.5rem; border: 1px solid var(--border-subtle); border-radius: 1.35rem 0 0 1.35rem; background: var(--surface-panel); box-shadow: -16px 16px 40px rgb(0 0 0 / 30%); pointer-events: auto; }

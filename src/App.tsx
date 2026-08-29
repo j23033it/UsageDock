@@ -1,17 +1,15 @@
 import { Component, type CSSProperties, type ErrorInfo, type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { appAdapter, type AppAdapter } from "./adapter";
+import openAiIconUrl from "./assets/providers/openai.svg";
+import openCodeGoIconUrl from "./assets/providers/opencode-go.svg";
 import { defaultSettings, type AppSettings, type DashboardSnapshot, type ProviderUsage, type UsageWindow } from "./contracts";
 import { formatDateTime, formatPercent, formatRelativeTime, isResetPending, moveProviderOrder, remainingTone, sourceLabel, statusLabel } from "./formatters";
 
 type AppProps = { adapter?: AppAdapter };
 type IconProps = { size?: number };
 
-const ProviderMark = ({ provider, size = 20 }: IconProps & { provider: ProviderUsage }) => (
-  <svg className="provider-mark" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="12" cy="12" r="10" className={`provider-mark__circle provider-mark__circle--${provider.id}`} />
-    <path d={provider.id === "codex" ? "M7.3 8.1h5.2a3.1 3.1 0 0 1 0 6.2H7.3m4.1-3.1h5.3" : "M8 7.6h8M8 12h6.4M8 16.4h8"} className="provider-mark__path" />
-  </svg>
-);
+const providerIconUrls: Record<string, string> = { codex: openAiIconUrl, "opencode-go": openCodeGoIconUrl };
+const ProviderMark = ({ provider, size = 20 }: IconProps & { provider: ProviderUsage }) => <img className={`provider-mark provider-mark--${provider.id}`} src={providerIconUrls[provider.id] ?? openAiIconUrl} width={size} height={size} alt="" aria-hidden="true" />;
 const RefreshGlyph = ({ size = 16 }: IconProps) => <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8.3A7.5 7.5 0 1 0 19.2 15M19 4.5v4.8h-4.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const SettingsGlyph = ({ size = 16 }: IconProps) => <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.1 2.6 2.8.8 2.6-1.2 1.7 1.7-1.2 2.6.8 2.8L22.4 13v2l-2.6 1.1-.8 2.8 1.2 2.6-1.7 1.7-2.6-1.2-2.8.8L12 23l-2.1-2.2-2.8-.8-2.6 1.2-1.7-1.7L4 16.1 3.2 13 1 12V10l2.2-1.1L4 6.1 2.8 3.5 4.5 1.8l2.6 1.2L10 2.2 12 0" transform="scale(.9) translate(1.3 1.3)" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>;
 const statusIcon = (status: ProviderUsage["status"]) => status === "fresh" ? "●" : status === "refreshing" ? "↻" : "!";
