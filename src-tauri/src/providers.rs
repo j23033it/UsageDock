@@ -236,11 +236,7 @@ pub async fn fetch_codex_log() -> Result<FetchResult, String> {
     let mut latest = None;
     for (path, _) in files.into_iter().take(20) {
         if let Ok(contents) = std::fs::read_to_string(path) {
-            let complete = complete_jsonl(&contents);
-            for line in complete.lines() {
-                let Ok(value) = serde_json::from_str::<Value>(line) else {
-                    continue;
-                };
+            for value in jsonl_values(&contents) {
                 if value
                     .get("payload")
                     .and_then(|payload| payload.get("type"))
@@ -287,15 +283,10 @@ pub async fn fetch_codex_log() -> Result<FetchResult, String> {
     })
 }
 
-fn complete_jsonl(contents: &str) -> &str {
-    if contents.ends_with('\n') {
-        contents
-    } else {
-        contents
-            .rsplit_once('\n')
-            .map(|(head, _)| head)
-            .unwrap_or("")
-    }
+fn jsonl_values(contents: &str) -> impl Iterator<Item = Value> + '_ {
+    contents
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
 }
 
 fn collect_rollouts(root: &Path, files: &mut Vec<(PathBuf, SystemTime)>) {
@@ -367,13 +358,22 @@ fn safe_opencode_error(error: reqwest::Error) -> String {
 }
 
 pub fn parse_opencode_response(value: &Value) -> Option<Vec<UsageWindow>> {
-    let rolling = value.get("usage")?.as_object()?;
+    let usage = value.get("usage")?.as_object()?;
     let mut windows = Vec::new();
-    for (label, item) in rolling {
+    let ordered = ["rolling", "weekly", "monthly"]
+        .into_iter()
+        .filter_map(|label| usage.get(label).map(|item| (label, item)))
+        .chain(
+            usage
+                .iter()
+                .filter(|(label, _)| !matches!(label.as_str(), "rolling" | "weekly" | "monthly"))
+                .map(|(label, item)| (label.as_str(), item)),
+        );
+    for (label, item) in ordered {
         let object = item.as_object()?;
         let percent = object.get("percent")?.as_f64()?;
         let used = clamp_percent(percent);
-        let kind = match label.as_str() {
+        let kind = match label {
             "rolling" => WindowKind::FiveHour,
             "weekly" => WindowKind::Weekly,
             "monthly" => WindowKind::Monthly,
@@ -385,7 +385,7 @@ pub fn parse_opencode_response(value: &Value) -> Option<Vec<UsageWindow>> {
             .map(ToOwned::to_owned);
         windows.push(UsageWindow {
             kind,
-            label: label.clone(),
+            label: label.to_string(),
             used_percent: Some(used),
             remaining_percent: Some(100.0 - used),
             resets_at,
@@ -413,8 +413,11 @@ mod tests {
 
     #[test]
     fn opencode応答を変換する() {
-        let value = serde_json::json!({"usage":{"rolling":{"status":"ok","percent":25,"resetsAt":"2025-01-01T00:00:00Z"},"weekly":{"status":"rate-limited","percent":110,"resetsAt":"2025-01-02T00:00:00Z"}}});
+        let value = serde_json::from_str::<Value>(r#"{"usage":{"weekly":{"status":"rate-limited","percent":110,"resetsAt":"2025-01-02T00:00:00Z"},"monthly":{"status":"ok","percent":5},"rolling":{"status":"ok","percent":25,"resetsAt":"2025-01-01T00:00:00Z"}}}"#).unwrap();
         let windows = parse_opencode_response(&value).unwrap();
+        assert_eq!(windows[0].label, "rolling");
+        assert_eq!(windows[1].label, "weekly");
+        assert_eq!(windows[2].label, "monthly");
         assert_eq!(windows[0].remaining_percent, Some(75.0));
         assert_eq!(windows[1].remaining_percent, Some(0.0));
     }
@@ -432,9 +435,13 @@ mod tests {
     }
 
     #[test]
-    fn 書き込み途中の最終行を読み飛ばす() {
-        let input = "{\"complete\":true}\n{\"partial\":";
-        assert_eq!(complete_jsonl(input), "{\"complete\":true}");
-        assert_eq!(complete_jsonl("{\"partial\":"), "");
+    fn 完全な最終行だけを改行なしでも読み込む() {
+        let input = "{\"first\":true}\n{\"last\":true}";
+        let values = jsonl_values(input).collect::<Vec<_>>();
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[1].get("last").and_then(Value::as_bool), Some(true));
+
+        let partial = "{\"complete\":true}\n{\"partial\":";
+        assert_eq!(jsonl_values(partial).count(), 1);
     }
 }

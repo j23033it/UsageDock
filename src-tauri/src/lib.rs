@@ -5,7 +5,7 @@ mod storage;
 use model::{
     AppSettings, DashboardSnapshot, ProviderId, ProviderStatus, ProviderUsage, UsageSource, now_iso,
 };
-use providers::{fetch_codex, fetch_opencode};
+use providers::{FetchResult, fetch_codex, fetch_opencode};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -187,37 +187,7 @@ async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderI
     };
     let (snapshot, notices) = {
         let mut data = state.data.lock().expect("状態ロック");
-        data.refreshing.remove(&id);
-        let mut notices = Vec::new();
-        match result {
-            Ok(value) => {
-                notices = collect_notifications(&mut data, &id, &value.windows);
-                let provider = data
-                    .snapshot
-                    .providers
-                    .iter_mut()
-                    .find(|provider| provider.id == id)
-                    .expect("プロバイダー");
-                provider.source = value.source;
-                provider.plan_name = value.plan_name;
-                provider.windows = value.windows;
-                provider.updated_at = Some(now_iso());
-                provider.last_error = None;
-                provider.status = ProviderStatus::Fresh;
-            }
-            Err(error) => {
-                let provider = data
-                    .snapshot
-                    .providers
-                    .iter_mut()
-                    .find(|provider| provider.id == id)
-                    .expect("プロバイダー");
-                provider.last_error = Some(error);
-                provider.status = classify(provider);
-            }
-        }
-        data.snapshot.refreshed_at = now_iso();
-        reconcile_providers(&mut data);
+        let notices = apply_refresh_result(&mut data, &id, result);
         state.save_snapshot(&data.snapshot);
         (data.snapshot.clone(), notices)
     };
@@ -235,6 +205,51 @@ async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderI
             .show();
     }
     let _ = app.emit("usage-updated", &snapshot);
+}
+
+fn apply_refresh_result(
+    data: &mut BackendData,
+    id: &ProviderId,
+    result: Result<FetchResult, String>,
+) -> Vec<(String, f64, u8)> {
+    data.refreshing.remove(id);
+    if !provider_enabled(&data.settings, id) {
+        reconcile_providers(data);
+        return Vec::new();
+    }
+    reconcile_providers(data);
+    let mut notices = Vec::new();
+    match result {
+        Ok(value) => {
+            notices = collect_notifications(data, id, &value.windows);
+            if let Some(provider) = data
+                .snapshot
+                .providers
+                .iter_mut()
+                .find(|provider| provider.id == *id)
+            {
+                provider.source = value.source;
+                provider.plan_name = value.plan_name;
+                provider.windows = value.windows;
+                provider.updated_at = Some(now_iso());
+                provider.last_error = None;
+                provider.status = ProviderStatus::Fresh;
+            }
+        }
+        Err(error) => {
+            if let Some(provider) = data
+                .snapshot
+                .providers
+                .iter_mut()
+                .find(|provider| provider.id == *id)
+            {
+                provider.last_error = Some(error);
+                provider.status = classify(provider);
+            }
+        }
+    }
+    data.snapshot.refreshed_at = now_iso();
+    notices
 }
 
 async fn refresh_all(app: &tauri::AppHandle, state: &BackendState) -> DashboardSnapshot {
@@ -559,5 +574,34 @@ mod tests {
         assert_eq!(reached_notification_threshold(20.0, &thresholds), Some(20));
         assert_eq!(reached_notification_threshold(9.0, &thresholds), Some(10));
         assert_eq!(reached_notification_threshold(0.0, &thresholds), Some(0));
+    }
+
+    #[test]
+    fn 無効化後に完了した取得結果を安全に破棄する() {
+        let settings = AppSettings {
+            codex_enabled: false,
+            ..Default::default()
+        };
+        let mut data = BackendData {
+            settings,
+            snapshot: DashboardSnapshot {
+                providers: vec![empty_provider(ProviderId::Codex)],
+                refreshed_at: now_iso(),
+            },
+            refreshing: HashSet::from([ProviderId::Codex]),
+            notified: HashSet::new(),
+            widget_expanded: false,
+        };
+        let result = FetchResult {
+            source: UsageSource::AppServer,
+            plan_name: Some("Pro".into()),
+            windows: Vec::new(),
+        };
+
+        let notices = apply_refresh_result(&mut data, &ProviderId::Codex, Ok(result));
+
+        assert!(notices.is_empty());
+        assert!(data.refreshing.is_empty());
+        assert!(data.snapshot.providers.is_empty());
     }
 }
