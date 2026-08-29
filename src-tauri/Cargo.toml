@@ -1,0 +1,19 @@
+[package]
+name = "usage-dock"
+version = "0.1.0"
+description = "CodexとOpenCode Goの残量を常駐表示するWindowsアプリ"
+authors = ["UsageDock contributors"]
+edition = "2024"
+
+[lib]
+name = "usage_dock_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.4", features = [] }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.11.5", features = ["tray-icon"] }
+
