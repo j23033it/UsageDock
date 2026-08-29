@@ -61,7 +61,11 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
         let initialized = json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} });
         let read =
             json!({ "jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": {} });
-        for request in [initialize, initialized, read] {
+        let account = json!({
+            "jsonrpc": "2.0", "id": 3, "method": "account/read",
+            "params": { "refreshToken": false }
+        });
+        for request in [initialize, initialized, read, account] {
             stdin
                 .write_all(serde_json::to_string(&request).unwrap().as_bytes())
                 .await
@@ -77,6 +81,8 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
         }
         let mut lines = BufReader::new(stdout).lines();
         let mut answer = None;
+        let mut account_plan = None;
+        let mut account_answered = false;
         while let Some(line) = lines
             .next_line()
             .await
@@ -86,13 +92,15 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
                 Ok(value) => value,
                 Err(_) => continue,
             };
-            if value.get("id").and_then(Value::as_i64) == Some(2)
-                || value
-                    .get("result")
-                    .and_then(|v| v.get("rateLimits"))
-                    .is_some()
-            {
-                answer = Some(value);
+            match value.get("id").and_then(Value::as_i64) {
+                Some(2) => answer = Some(value),
+                Some(3) => {
+                    account_plan = parse_codex_plan_name(&value);
+                    account_answered = true;
+                }
+                _ => {}
+            }
+            if answer.is_some() && account_answered {
                 break;
             }
         }
@@ -101,7 +109,7 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
             .ok_or_else(|| "Codex App Serverから利用状況を取得できませんでした".to_string())?;
         let windows = parse_codex_response(&response)
             .ok_or_else(|| "Codexの利用状況形式を認識できませんでした".to_string())?;
-        let plan_name = parse_codex_plan_name(&response);
+        let plan_name = account_plan.or_else(|| parse_codex_plan_name(&response));
         let has_five_hour_limit = Some(
             windows
                 .iter()
@@ -133,7 +141,7 @@ fn find_plan_type(value: &Value) -> Option<&str> {
     {
         return Some(plan);
     }
-    for key in ["rateLimits", "rate_limits"] {
+    for key in ["rateLimits", "rate_limits", "account"] {
         if let Some(plan) = object.get(key).and_then(find_plan_type) {
             return Some(plan);
         }
@@ -482,6 +490,15 @@ mod tests {
         assert_eq!(
             parse_codex_plan_name(&value).as_deref(),
             Some("ChatGPT Plus")
+        );
+    }
+
+    #[test]
+    fn codexのアカウント応答からプランを変換する() {
+        let value = serde_json::json!({"result":{"account":{"type":"chatgpt","email":"masked@example.com","planType":"pro"},"requiresOpenaiAuth":true}});
+        assert_eq!(
+            parse_codex_plan_name(&value).as_deref(),
+            Some("ChatGPT Pro")
         );
     }
 
