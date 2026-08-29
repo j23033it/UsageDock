@@ -22,7 +22,7 @@ export const formatDateTime = (value: string | null, now = new Date()) => {
   const time = new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(date);
   if (dateKey(date) === dateKey(today)) return `今日 ${time}`;
   if (dateKey(date) === dateKey(tomorrow)) return `明日 ${time}`;
-  return `${new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric" }).format(date)} ${time}`;
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
 };
 
 export const formatRelativeTime = (value: string | null, now = new Date()) => {
@@ -58,3 +58,10 @@ export const isResetPending = (usageWindow: UsageWindow, now = new Date()) => {
   return usageWindow.remainingPercent === null || usageWindow.usedPercent === null || usageWindow.remainingPercent >= 99;
 };
 
+export const moveProviderOrder = (order: string[], index: number, direction: -1 | 1) => {
+  const next = [...order];
+  const target = index + direction;
+  if (target < 0 || target >= next.length) return next;
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
+};
