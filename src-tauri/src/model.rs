@@ -69,6 +69,8 @@ pub struct ProviderUsage {
     pub id: ProviderId,
     pub display_name: String,
     pub plan_name: Option<String>,
+    #[serde(default)]
+    pub has_five_hour_limit: Option<bool>,
     pub status: ProviderStatus,
     pub source: UsageSource,
     pub updated_at: Option<String>,

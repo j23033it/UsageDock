@@ -86,7 +86,8 @@ const mockProviders = (): ProviderUsage[] => [
   {
     id: "codex",
     displayName: "Codex",
-    planName: "Pro",
+    planName: "ChatGPT Pro",
+    hasFiveHourLimit: true,
     status: "fresh",
     source: "app-server",
     updatedAt: new Date().toISOString(),
@@ -99,7 +100,8 @@ const mockProviders = (): ProviderUsage[] => [
   {
     id: "opencode-go",
     displayName: "OpenCode Go",
-    planName: "Go",
+    planName: null,
+    hasFiveHourLimit: null,
     status: "stale",
     source: "api",
     updatedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),

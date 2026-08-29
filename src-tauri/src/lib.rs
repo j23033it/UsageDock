@@ -57,6 +57,7 @@ fn empty_provider(id: ProviderId) -> ProviderUsage {
         display_name: id.display_name().into(),
         id,
         plan_name: None,
+        has_five_hour_limit: None,
         status: ProviderStatus::Unavailable,
         source: UsageSource::None,
         updated_at: None,
@@ -230,6 +231,7 @@ fn apply_refresh_result(
             {
                 provider.source = value.source;
                 provider.plan_name = value.plan_name;
+                provider.has_five_hour_limit = value.has_five_hour_limit;
                 provider.windows = value.windows;
                 provider.updated_at = Some(now_iso());
                 provider.last_error = None;
@@ -595,6 +597,7 @@ mod tests {
         let result = FetchResult {
             source: UsageSource::AppServer,
             plan_name: Some("Pro".into()),
+            has_five_hour_limit: Some(true),
             windows: Vec::new(),
         };
 

@@ -18,6 +18,7 @@ use tokio::{
 pub struct FetchResult {
     pub source: UsageSource,
     pub plan_name: Option<String>,
+    pub has_five_hour_limit: Option<bool>,
     pub windows: Vec<UsageWindow>,
 }
 
@@ -100,15 +101,68 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
             .ok_or_else(|| "Codex App Serverから利用状況を取得できませんでした".to_string())?;
         let windows = parse_codex_response(&response)
             .ok_or_else(|| "Codexの利用状況形式を認識できませんでした".to_string())?;
+        let plan_name = parse_codex_plan_name(&response);
+        let has_five_hour_limit = Some(
+            windows
+                .iter()
+                .any(|window| matches!(window.kind, WindowKind::FiveHour)),
+        );
         Ok(FetchResult {
             source: UsageSource::AppServer,
-            plan_name: None,
+            plan_name,
+            has_five_hour_limit,
             windows,
         })
     };
     timeout(Duration::from_secs(10), task)
         .await
         .map_err(|_| "Codex App Serverがタイムアウトしました".to_string())?
+}
+
+pub fn parse_codex_plan_name(response: &Value) -> Option<String> {
+    let root = response.get("result").unwrap_or(response);
+    find_plan_type(root).and_then(display_plan_name)
+}
+
+fn find_plan_type(value: &Value) -> Option<&str> {
+    let object = value.as_object()?;
+    if let Some(plan) = object
+        .get("planType")
+        .or_else(|| object.get("plan_type"))
+        .and_then(Value::as_str)
+    {
+        return Some(plan);
+    }
+    for key in ["rateLimits", "rate_limits"] {
+        if let Some(plan) = object.get(key).and_then(find_plan_type) {
+            return Some(plan);
+        }
+    }
+    for key in ["rateLimitsByLimitId", "rate_limits_by_limit_id"] {
+        if let Some(map) = object.get(key).and_then(Value::as_object) {
+            for item in map.values() {
+                if let Some(plan) = find_plan_type(item) {
+                    return Some(plan);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn display_plan_name(plan: &str) -> Option<String> {
+    let name = match plan.trim().to_ascii_lowercase().as_str() {
+        "free" => "ChatGPT Free",
+        "go" => "ChatGPT Go",
+        "plus" => "ChatGPT Plus",
+        "pro" => "ChatGPT Pro",
+        "team" => "ChatGPT Team",
+        "self_serve_business_usage_based" | "business" => "ChatGPT Business",
+        "enterprise_cbp_usage_based" | "enterprise" => "ChatGPT Enterprise",
+        "edu" => "ChatGPT Edu",
+        _ => return None,
+    };
+    Some(name.to_string())
 }
 
 pub fn parse_codex_response(response: &Value) -> Option<Vec<UsageWindow>> {
@@ -250,6 +304,7 @@ pub async fn fetch_codex_log() -> Result<FetchResult, String> {
                     .and_then(|payload| payload.get("rate_limits"))
                     && let Some(parsed) = parse_codex_response(rate_limits)
                 {
+                    let plan_name = parse_codex_plan_name(rate_limits);
                     let timestamp = value
                         .get("timestamp")
                         .and_then(Value::as_str)
@@ -261,24 +316,29 @@ pub async fn fetch_codex_log() -> Result<FetchResult, String> {
                         })
                         .unwrap_or("")
                         .to_string();
-                    if latest
-                        .as_ref()
-                        .is_none_or(|(current, _): &(String, Vec<UsageWindow>)| {
+                    if latest.as_ref().is_none_or(
+                        |(current, _, _): &(String, Option<String>, Vec<UsageWindow>)| {
                             timestamp >= *current
-                        })
-                    {
-                        latest = Some((timestamp, parsed));
+                        },
+                    ) {
+                        latest = Some((timestamp, plan_name, parsed));
                     }
                 }
             }
         }
     }
-    let windows = latest
-        .map(|(_, windows)| windows)
+    let (plan_name, windows) = latest
+        .map(|(_, plan_name, windows)| (plan_name, windows))
         .ok_or_else(|| "Codexのローカルログから利用状況を取得できませんでした".to_string())?;
+    let has_five_hour_limit = Some(
+        windows
+            .iter()
+            .any(|window| matches!(window.kind, WindowKind::FiveHour)),
+    );
     Ok(FetchResult {
         source: UsageSource::LocalLog,
-        plan_name: None,
+        plan_name,
+        has_five_hour_limit,
         windows,
     })
 }
@@ -345,6 +405,7 @@ pub async fn fetch_opencode(api_key: String) -> Result<FetchResult, String> {
     Ok(FetchResult {
         source: UsageSource::Api,
         plan_name: None,
+        has_five_hour_limit: None,
         windows,
     })
 }
@@ -401,7 +462,7 @@ mod tests {
 
     #[test]
     fn codex応答を複数枠へ変換する() {
-        let value = serde_json::json!({"result":{"rateLimits":{"primary":{"usedPercent":99,"windowDurationMins":300}},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":120,"windowDurationMins":300,"resetsAt":1700000000},"secondary":{"usedPercent":10,"windowDurationMins":10080}},"codex_other":{"primary":{"usedPercent":50,"windowDurationMins":43200}}}}});
+        let value = serde_json::json!({"result":{"rateLimits":{"planType":"pro","primary":{"usedPercent":99,"windowDurationMins":300}},"rateLimitsByLimitId":{"codex":{"planType":"pro","primary":{"usedPercent":120,"windowDurationMins":300,"resetsAt":1700000000},"secondary":{"usedPercent":10,"windowDurationMins":10080}},"codex_other":{"planType":"pro","primary":{"usedPercent":50,"windowDurationMins":43200}}}}});
         let windows = parse_codex_response(&value).unwrap();
         assert_eq!(windows.len(), 3);
         assert_eq!(windows[0].remaining_percent, Some(0.0));
@@ -409,6 +470,19 @@ mod tests {
         assert_eq!(windows[0].label, "5時間枠");
         assert_eq!(windows[1].label, "週間枠");
         assert_eq!(windows[2].label, "codex_other · 月間枠");
+        assert_eq!(
+            parse_codex_plan_name(&value).as_deref(),
+            Some("ChatGPT Pro")
+        );
+    }
+
+    #[test]
+    fn codexの旧形式からplusプランを変換する() {
+        let value = serde_json::json!({"primary":{"used_percent":25,"window_minutes":300},"plan_type":"plus"});
+        assert_eq!(
+            parse_codex_plan_name(&value).as_deref(),
+            Some("ChatGPT Plus")
+        );
     }
 
     #[test]

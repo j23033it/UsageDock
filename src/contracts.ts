@@ -17,6 +17,7 @@ export type ProviderUsage = {
   id: string;
   displayName: string;
   planName: string | null;
+  hasFiveHourLimit: boolean | null;
   status: ProviderStatus;
   source: UsageSource;
   updatedAt: string | null;
