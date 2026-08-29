@@ -1,6 +1,6 @@
 [package]
 name = "usage-dock"
-version = "0.1.0"
+version = "0.2.0"
 description = "CodexとOpenCode Goの残量を常駐表示するWindowsアプリ"
 authors = ["UsageDock contributors"]
 edition = "2024"
@@ -24,4 +24,3 @@ tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
-

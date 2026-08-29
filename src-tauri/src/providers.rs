@@ -56,7 +56,7 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
             .ok_or_else(|| "Codex App Serverの出力を開けませんでした".to_string())?;
         let initialize = json!({
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": { "clientInfo": { "name": "usage_dock", "version": "0.1.0" }, "capabilities": {} }
+            "params": { "clientInfo": { "name": "usage_dock", "version": env!("CARGO_PKG_VERSION") }, "capabilities": {} }
         });
         let initialized = json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} });
         let read =
