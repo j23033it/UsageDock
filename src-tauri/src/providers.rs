@@ -188,7 +188,9 @@ pub fn parse_codex_response(response: &Value) -> Option<Vec<UsageWindow>> {
         .filter(|map| !map.is_empty())
     {
         for (id, item) in map {
-            collect_limit_objects(item, Some(id.clone()), &mut limits);
+            if !is_spark_limit(id, item) {
+                collect_limit_objects(item, Some(id.clone()), &mut limits);
+            }
         }
     } else if let Some(rate_limits) = root.get("rateLimits") {
         collect_limit_objects(rate_limits, None, &mut limits);
@@ -207,6 +209,25 @@ pub fn parse_codex_response(response: &Value) -> Option<Vec<UsageWindow>> {
     (!windows.is_empty()).then_some(windows)
 }
 
+fn is_spark_limit(id: &str, value: &Value) -> bool {
+    if id.eq_ignore_ascii_case("codex_bengalfox") {
+        return true;
+    }
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object
+        .get("limitId")
+        .or_else(|| object.get("limit_id"))
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.eq_ignore_ascii_case("codex_bengalfox"))
+        || object
+            .get("limitName")
+            .or_else(|| object.get("limit_name"))
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.eq_ignore_ascii_case("GPT-5.3-Codex-Spark"))
+}
+
 fn collect_limit_objects(value: &Value, hint: Option<String>, output: &mut Vec<(String, Value)>) {
     let Some(object) = value.as_object() else {
         return;
@@ -219,7 +240,9 @@ fn collect_limit_objects(value: &Value, hint: Option<String>, output: &mut Vec<(
     }
     if let Some(map) = object.get("rateLimitsByLimitId").and_then(Value::as_object) {
         for (id, item) in map {
-            collect_limit_objects(item, Some(id.clone()), output);
+            if !is_spark_limit(id, item) {
+                collect_limit_objects(item, Some(id.clone()), output);
+            }
         }
     }
     for key in ["primary", "secondary"] {
@@ -476,7 +499,7 @@ mod tests {
 
     #[test]
     fn codex応答を複数枠へ変換する() {
-        let value = serde_json::json!({"result":{"rateLimits":{"planType":"pro","primary":{"usedPercent":99,"windowDurationMins":300}},"rateLimitsByLimitId":{"codex":{"planType":"pro","primary":{"usedPercent":120,"windowDurationMins":300,"resetsAt":1700000000},"secondary":{"usedPercent":10,"windowDurationMins":10080}},"codex_other":{"planType":"pro","primary":{"usedPercent":50,"windowDurationMins":43200}}}}});
+        let value = serde_json::json!({"result":{"rateLimits":{"planType":"pro","primary":{"usedPercent":99,"windowDurationMins":300}},"rateLimitsByLimitId":{"codex":{"planType":"pro","primary":{"usedPercent":120,"windowDurationMins":300,"resetsAt":1700000000},"secondary":{"usedPercent":10,"windowDurationMins":10080}},"codex_bengalfox":{"limitName":"GPT-5.3-Codex-Spark","planType":"pro","primary":{"usedPercent":60,"windowDurationMins":300},"secondary":{"usedPercent":20,"windowDurationMins":10080}},"codex_other":{"planType":"pro","primary":{"usedPercent":50,"windowDurationMins":43200}}}}});
         let windows = parse_codex_response(&value).unwrap();
         assert_eq!(windows.len(), 3);
         assert_eq!(windows[0].remaining_percent, Some(0.0));
@@ -488,6 +511,15 @@ mod tests {
             parse_codex_plan_name(&value).as_deref(),
             Some("ChatGPT Pro")
         );
+    }
+
+    #[test]
+    fn spark枠を名称でも除外して通常の週間枠だけ残す() {
+        let value = serde_json::json!({"result":{"rateLimitsByLimitId":{"codex":{"planType":"pro","secondary":{"usedPercent":10,"windowDurationMins":10080}},"temporary_model_bucket":{"limitName":"GPT-5.3-Codex-Spark","primary":{"usedPercent":60,"windowDurationMins":300}}}}});
+        let windows = parse_codex_response(&value).unwrap();
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].kind, WindowKind::Weekly);
+        assert_eq!(windows[0].label, "週間枠");
     }
 
     #[test]
