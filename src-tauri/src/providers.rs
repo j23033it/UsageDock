@@ -39,6 +39,7 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
+            .kill_on_drop(true)
             .spawn()
             .map_err(|_| "Codex App Serverを起動できませんでした".to_string())?;
         let mut stdin = child

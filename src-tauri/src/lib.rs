@@ -400,3 +400,31 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("UsageDockの起動に失敗しました");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 最終成功時刻から状態を分類する() {
+        let recent = ProviderUsage {
+            updated_at: Some((chrono::Utc::now() - chrono::Duration::minutes(1)).to_rfc3339()),
+            ..empty_provider(ProviderId::Codex)
+        };
+        let stale = ProviderUsage {
+            updated_at: Some((chrono::Utc::now() - chrono::Duration::minutes(3)).to_rfc3339()),
+            ..empty_provider(ProviderId::Codex)
+        };
+        let outdated = ProviderUsage {
+            updated_at: Some((chrono::Utc::now() - chrono::Duration::minutes(11)).to_rfc3339()),
+            ..empty_provider(ProviderId::Codex)
+        };
+        assert_eq!(classify(&recent), ProviderStatus::Fresh);
+        assert_eq!(classify(&stale), ProviderStatus::Stale);
+        assert_eq!(classify(&outdated), ProviderStatus::Outdated);
+        assert_eq!(
+            classify(&empty_provider(ProviderId::Codex)),
+            ProviderStatus::Unavailable
+        );
+    }
+}
