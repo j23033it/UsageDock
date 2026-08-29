@@ -627,7 +627,18 @@ mod tests {
 
         assert!(notices.is_empty());
         assert!(data.refreshing.is_empty());
-        assert!(data.snapshot.providers.is_empty());
+        assert!(
+            data.snapshot
+                .providers
+                .iter()
+                .all(|provider| provider.id != ProviderId::Codex)
+        );
+        assert!(
+            data.snapshot
+                .providers
+                .iter()
+                .any(|provider| provider.id == ProviderId::OpenCodeGo)
+        );
     }
 
     #[test]

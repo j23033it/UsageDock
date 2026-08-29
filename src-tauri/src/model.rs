@@ -134,7 +134,7 @@ impl Default for AppSettings {
             start_in_background: true,
             provider_order: vec![ProviderId::Codex, ProviderId::OpenCodeGo],
             codex_enabled: true,
-            open_code_go_enabled: false,
+            open_code_go_enabled: true,
             notification_thresholds: NotificationThresholds::default(),
             codex_path: None,
             force_compatibility_mode: false,
@@ -221,6 +221,17 @@ mod tests {
         assert_eq!(kind_for_duration(Some(10_080)), WindowKind::Weekly);
         assert_eq!(kind_for_duration(Some(43_200)), WindowKind::Monthly);
         assert_eq!(kind_for_duration(Some(17)), WindowKind::Custom);
+    }
+
+    #[test]
+    fn 初期状態で両プロバイダーを表示する() {
+        let settings = AppSettings::default();
+        assert!(settings.codex_enabled);
+        assert!(settings.open_code_go_enabled);
+        assert_eq!(
+            settings.provider_order,
+            vec![ProviderId::Codex, ProviderId::OpenCodeGo]
+        );
     }
 
     #[test]
