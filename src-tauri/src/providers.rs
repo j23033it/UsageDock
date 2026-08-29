@@ -163,7 +163,7 @@ fn display_plan_name(plan: &str) -> Option<String> {
         "free" => "ChatGPT Free",
         "go" => "ChatGPT Go",
         "plus" => "ChatGPT Plus",
-        "pro" => "ChatGPT Pro",
+        "pro" | "prolite" | "pro_lite" => "ChatGPT Pro",
         "team" => "ChatGPT Team",
         "self_serve_business_usage_based" | "business" => "ChatGPT Business",
         "enterprise_cbp_usage_based" | "enterprise" => "ChatGPT Enterprise",
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn codexのアカウント応答からプランを変換する() {
-        let value = serde_json::json!({"result":{"account":{"type":"chatgpt","email":"masked@example.com","planType":"pro"},"requiresOpenaiAuth":true}});
+        let value = serde_json::json!({"result":{"account":{"type":"chatgpt","email":"masked@example.com","planType":"prolite"},"requiresOpenaiAuth":true}});
         assert_eq!(
             parse_codex_plan_name(&value).as_deref(),
             Some("ChatGPT Pro")
