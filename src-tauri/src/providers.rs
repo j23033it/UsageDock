@@ -22,6 +22,9 @@ pub struct FetchResult {
 }
 
 pub async fn fetch_codex(settings: &AppSettings) -> Result<FetchResult, String> {
+    if settings.force_compatibility_mode {
+        return fetch_codex_log().await;
+    }
     match fetch_codex_app_server(settings).await {
         Ok(result) => Ok(result),
         Err(_) => fetch_codex_log().await.map(|mut result| {
@@ -109,18 +112,27 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
 }
 
 pub fn parse_codex_response(response: &Value) -> Option<Vec<UsageWindow>> {
+    let root = response.get("result").unwrap_or(response);
     let mut limits = Vec::new();
-    collect_limit_objects(response, None, &mut limits);
+    if let Some(map) = root
+        .get("rateLimitsByLimitId")
+        .and_then(Value::as_object)
+        .filter(|map| !map.is_empty())
+    {
+        for (id, item) in map {
+            collect_limit_objects(item, Some(id.clone()), &mut limits);
+        }
+    } else if let Some(rate_limits) = root.get("rateLimits") {
+        collect_limit_objects(rate_limits, None, &mut limits);
+    } else {
+        collect_limit_objects(root, None, &mut limits);
+    }
     if limits.is_empty() {
         return None;
     }
     let mut windows = Vec::new();
     for (label, object) in limits {
-        if let Some(window) = parse_limit(&label, &object)
-            && !windows
-                .iter()
-                .any(|item: &UsageWindow| item.label == window.label)
-        {
+        if let Some(window) = parse_limit(&label, &object) {
             windows.push(window);
         }
     }
@@ -145,7 +157,9 @@ fn collect_limit_objects(value: &Value, hint: Option<String>, output: &mut Vec<(
     for key in ["primary", "secondary"] {
         if let Some(item) = object.get(key) {
             output.push((
-                hint.clone().unwrap_or_else(|| key.to_string()),
+                hint.as_ref()
+                    .map(|bucket| format!("{bucket}:{key}"))
+                    .unwrap_or_else(|| key.to_string()),
                 item.clone(),
             ));
         }
@@ -175,7 +189,7 @@ fn parse_limit(label: &str, value: &Value) -> Option<UsageWindow> {
         .and_then(unix_seconds_to_iso_or_string);
     Some(UsageWindow {
         kind: kind_for_duration(duration),
-        label: friendly_label(label),
+        label: friendly_label(label, duration),
         used_percent: Some(used),
         remaining_percent: Some(100.0 - used),
         resets_at,
@@ -187,11 +201,27 @@ fn unix_seconds_to_iso_or_string(value: &Value) -> Option<String> {
     unix_seconds_to_iso(value).or_else(|| value.as_str().map(ToOwned::to_owned))
 }
 
-fn friendly_label(label: &str) -> String {
-    match label {
-        "primary" => "Primary".into(),
-        "secondary" => "Secondary".into(),
-        other => other.to_string(),
+fn friendly_label(label: &str, duration: Option<u64>) -> String {
+    let window = match kind_for_duration(duration) {
+        WindowKind::FiveHour => "5時間枠".to_string(),
+        WindowKind::Weekly => "週間枠".to_string(),
+        WindowKind::Monthly => "月間枠".to_string(),
+        WindowKind::Custom => duration
+            .map(|minutes| {
+                if minutes >= 1_440 && minutes % 1_440 == 0 {
+                    format!("{}日枠", minutes / 1_440)
+                } else if minutes >= 60 && minutes % 60 == 0 {
+                    format!("{}時間枠", minutes / 60)
+                } else {
+                    "利用枠".to_string()
+                }
+            })
+            .unwrap_or_else(|| "利用枠".to_string()),
+    };
+    let bucket = label.split(':').next().unwrap_or(label);
+    match bucket {
+        "primary" | "secondary" | "codex" => window,
+        other => format!("{other} · {window}"),
     }
 }
 
@@ -206,7 +236,8 @@ pub async fn fetch_codex_log() -> Result<FetchResult, String> {
     let mut latest = None;
     for (path, _) in files.into_iter().take(20) {
         if let Ok(contents) = std::fs::read_to_string(path) {
-            for line in contents.lines() {
+            let complete = complete_jsonl(&contents);
+            for line in complete.lines() {
                 let Ok(value) = serde_json::from_str::<Value>(line) else {
                     continue;
                 };
@@ -256,6 +287,17 @@ pub async fn fetch_codex_log() -> Result<FetchResult, String> {
     })
 }
 
+fn complete_jsonl(contents: &str) -> &str {
+    if contents.ends_with('\n') {
+        contents
+    } else {
+        contents
+            .rsplit_once('\n')
+            .map(|(head, _)| head)
+            .unwrap_or("")
+    }
+}
+
 fn collect_rollouts(root: &Path, files: &mut Vec<(PathBuf, SystemTime)>) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
@@ -288,11 +330,14 @@ pub async fn fetch_opencode(api_key: String) -> Result<FetchResult, String> {
         .await
         .map_err(safe_opencode_error)?;
     let status = response.status();
-    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+    if status == reqwest::StatusCode::UNAUTHORIZED {
         return Err("OpenCode GoのAPIキーが認証されませんでした".into());
     }
+    if status == reqwest::StatusCode::FORBIDDEN {
+        return Err("OpenCode Goの契約が必要です".into());
+    }
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        return Err("OpenCode Goの利用上限に達しました".into());
+        return Err("OpenCode Goは更新待機中です。最後の値を表示します".into());
     }
     if status.is_server_error() {
         return Err("OpenCode Goのサーバーで問題が発生しました".into());
@@ -356,11 +401,14 @@ mod tests {
 
     #[test]
     fn codex応答を複数枠へ変換する() {
-        let value = serde_json::json!({"result":{"rateLimits":{"primary":{"usedPercent":120,"windowDurationMins":300,"resetsAt":1700000000},"secondary":{"usedPercent":10,"windowDurationMins":10080}},"rateLimitsByLimitId":{"extra":{"usedPercent":50,"windowDurationMins":43200}}}});
+        let value = serde_json::json!({"result":{"rateLimits":{"primary":{"usedPercent":99,"windowDurationMins":300}},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":120,"windowDurationMins":300,"resetsAt":1700000000},"secondary":{"usedPercent":10,"windowDurationMins":10080}},"codex_other":{"primary":{"usedPercent":50,"windowDurationMins":43200}}}}});
         let windows = parse_codex_response(&value).unwrap();
         assert_eq!(windows.len(), 3);
         assert_eq!(windows[0].remaining_percent, Some(0.0));
         assert!(windows[0].resets_at.is_some());
+        assert_eq!(windows[0].label, "5時間枠");
+        assert_eq!(windows[1].label, "週間枠");
+        assert_eq!(windows[2].label, "codex_other · 月間枠");
     }
 
     #[test]
@@ -381,5 +429,12 @@ mod tests {
                 .and_then(Value::as_str)
                 != Some("token_count")
         );
+    }
+
+    #[test]
+    fn 書き込み途中の最終行を読み飛ばす() {
+        let input = "{\"complete\":true}\n{\"partial\":";
+        assert_eq!(complete_jsonl(input), "{\"complete\":true}");
+        assert_eq!(complete_jsonl("{\"partial\":"), "");
     }
 }

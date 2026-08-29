@@ -15,7 +15,7 @@
         "label": "widget",
         "title": "UsageDock",
         "width": 76,
-        "height": 196,
+        "height": 320,
         "resizable": false,
         "maximizable": false,
         "minimizable": false,
@@ -40,4 +40,3 @@
     "longDescription": "CodexとOpenCode Goの残量を、Windowsの画面右端に固定表示する常駐アプリです。"
   }
 }
-

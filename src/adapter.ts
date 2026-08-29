@@ -17,6 +17,7 @@ export type AppAdapter = {
   openSettings: (providerId?: string) => Promise<void>;
   setWidgetExpanded: (expanded: boolean) => Promise<void>;
   onUsageUpdated: (handler: (snapshot: DashboardSnapshot) => void) => () => void;
+  onSettingsFocus: (handler: (providerId: string) => void) => () => void;
 };
 
 const isTauriRuntime = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -38,6 +39,20 @@ const tauriAdapter: AppAdapter = {
     let active = true;
     let unlisten: (() => void) | undefined;
     void listen<DashboardSnapshot>("usage-updated", (event) => {
+      if (active) handler(event.payload);
+    }).then((cleanup) => {
+      unlisten = cleanup;
+      if (!active) cleanup();
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  },
+  onSettingsFocus: (handler) => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<string>("settings-focus-provider", (event) => {
       if (active) handler(event.payload);
     }).then((cleanup) => {
       unlisten = cleanup;
@@ -109,6 +124,7 @@ export const createMockAdapter = (): AppAdapter => {
       listeners.add(handler);
       return () => listeners.delete(handler);
     },
+    onSettingsFocus: () => () => undefined,
   };
 };
 

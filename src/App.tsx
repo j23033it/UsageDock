@@ -63,12 +63,13 @@ const settingsWithDefaults = (value: AppSettings): AppSettings => ({ ...defaultS
 
 const SettingsApp = ({ adapter }: { adapter: AppAdapter }) => {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-  const [section, setSection] = useState<SettingsSection>("general");
+  const [section, setSection] = useState<SettingsSection>(() => new URLSearchParams(window.location.search).has("provider") ? "providers" : "general");
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "success" | "error">("loading");
   const [message, setMessage] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [connecting, setConnecting] = useState(false);
   useEffect(() => { let active = true; void adapter.getSettings().then((value) => { if (active) { setSettings(settingsWithDefaults(value)); setStatus("idle"); } }).catch((caught) => { if (active) { setStatus("error"); setMessage(caught instanceof Error ? caught.message : "設定を読み込めませんでした。"); } }); return () => { active = false; }; }, [adapter]);
+  useEffect(() => adapter.onSettingsFocus(() => setSection("providers")), [adapter]);
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
   const save = async (event: FormEvent) => { event.preventDefault(); if (status === "saving") return; setStatus("saving"); try { await adapter.saveSettings(settings); setStatus("success"); setMessage("設定を保存しました。"); } catch (caught) { setStatus("error"); setMessage(caught instanceof Error ? caught.message : "設定を保存できませんでした。"); } };
   const connect = async () => { if (!apiKey || connecting) return; setConnecting(true); setMessage(""); try { await adapter.setOpencodeApiKey(apiKey); setApiKey(""); setMessage("OpenCode Goに接続しました。"); } catch (caught) { setMessage(caught instanceof Error ? caught.message : "接続できませんでした。"); } finally { setConnecting(false); } };

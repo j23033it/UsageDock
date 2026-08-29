@@ -18,6 +18,13 @@ pub enum ProviderId {
 }
 
 impl ProviderId {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::OpenCodeGo => "opencode-go",
+        }
+    }
+
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::Codex => "Codex",
@@ -141,6 +148,18 @@ impl AppSettings {
         if !matches!(self.widget_size.as_str(), "s" | "m" | "l") {
             self.widget_size = "m".to_string();
         }
+        let mut provider_order = Vec::new();
+        for id in self.provider_order {
+            if !provider_order.contains(&id) {
+                provider_order.push(id);
+            }
+        }
+        for id in [ProviderId::Codex, ProviderId::OpenCodeGo] {
+            if !provider_order.contains(&id) {
+                provider_order.push(id);
+            }
+        }
+        self.provider_order = provider_order;
         self.notification_thresholds.warning_percent =
             self.notification_thresholds.warning_percent.clamp(1, 100);
         self.notification_thresholds.critical_percent =

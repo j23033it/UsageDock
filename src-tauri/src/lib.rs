@@ -62,6 +62,37 @@ fn empty_provider(id: ProviderId) -> ProviderUsage {
     }
 }
 
+fn provider_enabled(settings: &AppSettings, id: &ProviderId) -> bool {
+    match id {
+        ProviderId::Codex => settings.codex_enabled,
+        ProviderId::OpenCodeGo => settings.open_code_go_enabled,
+    }
+}
+
+fn reconcile_providers(data: &mut BackendData) {
+    data.snapshot
+        .providers
+        .retain(|provider| provider_enabled(&data.settings, &provider.id));
+    for id in data.settings.provider_order.clone() {
+        if provider_enabled(&data.settings, &id)
+            && !data
+                .snapshot
+                .providers
+                .iter()
+                .any(|provider| provider.id == id)
+        {
+            data.snapshot.providers.push(empty_provider(id));
+        }
+    }
+    data.snapshot.providers.sort_by_key(|provider| {
+        data.settings
+            .provider_order
+            .iter()
+            .position(|id| id == &provider.id)
+            .unwrap_or(usize::MAX)
+    });
+}
+
 fn classify(status: &ProviderUsage) -> ProviderStatus {
     let Some(updated_at) = status.updated_at.as_deref() else {
         return ProviderStatus::Unavailable;
@@ -126,31 +157,7 @@ async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderI
             }
         }
         data.snapshot.refreshed_at = now_iso();
-        let codex_enabled = data.settings.codex_enabled;
-        let open_code_go_enabled = data.settings.open_code_go_enabled;
-        let provider_order = data.settings.provider_order.clone();
-        data.snapshot
-            .providers
-            .retain(|provider| match provider.id {
-                ProviderId::Codex => codex_enabled,
-                ProviderId::OpenCodeGo => open_code_go_enabled,
-            });
-        for id in [ProviderId::Codex, ProviderId::OpenCodeGo] {
-            if !data
-                .snapshot
-                .providers
-                .iter()
-                .any(|provider| provider.id == id)
-            {
-                data.snapshot.providers.push(empty_provider(id));
-            }
-        }
-        data.snapshot.providers.sort_by_key(|provider| {
-            provider_order
-                .iter()
-                .position(|id| id == &provider.id)
-                .unwrap_or(usize::MAX)
-        });
+        reconcile_providers(&mut data);
         state.save_snapshot(&data.snapshot);
         data.snapshot.clone()
     };
@@ -178,6 +185,7 @@ async fn refresh_all(app: &tauri::AppHandle, state: &BackendState) -> DashboardS
 
 fn get_dashboard_inner(state: &BackendState) -> DashboardSnapshot {
     let mut data = state.data.lock().expect("状態ロック");
+    reconcile_providers(&mut data);
     for provider in &mut data.snapshot.providers {
         if !matches!(provider.status, ProviderStatus::Refreshing) {
             provider.status = classify(provider);
@@ -225,9 +233,12 @@ async fn save_settings(
     let settings = settings.clamped();
     state.save_settings(&settings)?;
     let auto_start = settings.auto_start;
-    {
-        state.data.lock().expect("状態ロック").settings = settings;
-    }
+    let snapshot = {
+        let mut data = state.data.lock().expect("状態ロック");
+        data.settings = settings;
+        reconcile_providers(&mut data);
+        data.snapshot.clone()
+    };
     if auto_start {
         let _ = app.autolaunch().enable();
     } else {
@@ -236,6 +247,7 @@ async fn save_settings(
     if let Some(widget) = app.get_webview_window("widget") {
         reposition_widget(&widget);
     }
+    let _ = app.emit("usage-updated", snapshot);
     Ok(())
 }
 
@@ -244,7 +256,9 @@ async fn set_opencode_api_key(api_key: String) -> Result<(), String> {
     if api_key.trim().is_empty() {
         return Err("APIキーを入力してください".into());
     }
-    storage::save_opencode_key(api_key.trim())
+    let api_key = api_key.trim().to_string();
+    fetch_opencode(api_key.clone()).await?;
+    storage::save_opencode_key(&api_key)
 }
 
 #[tauri::command]
@@ -260,15 +274,18 @@ async fn open_settings(
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.show();
         let _ = window.set_focus();
+        if let Some(id) = provider_id {
+            let _ = app.emit_to("settings", "settings-focus-provider", id);
+        }
         return Ok(());
     }
-    let url = match provider_id {
-        Some(id) => format!("index.html?provider={id:?}"),
+    let url = match provider_id.as_ref() {
+        Some(id) => format!("index.html?view=settings&provider={}", id.as_str()),
         None => "index.html".to_string(),
     };
     tauri::WebviewWindowBuilder::new(&app, "settings", tauri::WebviewUrl::App(url.into()))
         .title("UsageDock 設定")
-        .inner_size(560.0, 640.0)
+        .inner_size(760.0, 680.0)
         .resizable(true)
         .build()
         .map(|_| ())
@@ -285,10 +302,21 @@ async fn set_widget_expanded(
         return Err("ウィジェットが見つかりません".into());
     };
     let settings = state.data.lock().expect("状態ロック").settings.clone();
-    let base = if expanded { 388 } else { 76 };
-    let width = (base * u32::from(settings.scale_percent) / 100).max(1);
+    let (collapsed_width, expanded_width, base_height) = match settings.widget_size.as_str() {
+        "s" => (56, 350, 268),
+        "l" => (92, 430, 372),
+        _ => (76, 388, 320),
+    };
+    let base_width = if expanded {
+        expanded_width
+    } else {
+        collapsed_width
+    };
+    let scale = u32::from(settings.scale_percent);
+    let width = (base_width * scale / 100).max(1);
+    let height = (base_height * scale / 100).max(1);
     window
-        .set_size(PhysicalSize::new(width, 196))
+        .set_size(PhysicalSize::new(width, height))
         .map_err(|_| "ウィジェットサイズを変更できませんでした".to_string())?;
     reposition_widget(&window);
     Ok(())
@@ -297,7 +325,12 @@ async fn set_widget_expanded(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(widget) = app.get_webview_window("widget") {
+                let _ = widget.show();
+                reposition_widget(&widget);
+            }
+        }))
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(|app| {
             let config_dir = app
@@ -332,33 +365,34 @@ pub fn run() {
             let menu = MenuBuilder::new(app)
                 .items(&[&settings_item, &refresh_item, &quit_item])
                 .build()?;
-            TrayIconBuilder::new()
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id().as_ref() {
-                    "settings" => {
-                        let app = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let _ = open_settings(app, None).await;
-                        });
-                    }
-                    "refresh" => {
-                        if let Some(state) = app.try_state::<BackendState>() {
-                            let state = (*state).clone();
+            let mut tray =
+                TrayIconBuilder::new()
+                    .menu(&menu)
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "settings" => {
                             let app = app.clone();
                             tauri::async_runtime::spawn(async move {
-                                let _ = refresh_all(&app, &state).await;
+                                let _ = open_settings(app, None).await;
                             });
                         }
-                    }
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .build(app)?;
+                        "refresh" => {
+                            if let Some(state) = app.try_state::<BackendState>() {
+                                let state = (*state).clone();
+                                let app = app.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    let _ = refresh_all(&app, &state).await;
+                                });
+                            }
+                        }
+                        "quit" => app.exit(0),
+                        _ => {}
+                    });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.build(app)?;
             if let Some(widget) = app.get_webview_window("widget") {
                 reposition_widget(&widget);
-                if settings.start_in_background {
-                    let _ = widget.hide();
-                }
             }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -366,6 +400,7 @@ pub fn run() {
                     let Some(state) = handle.try_state::<BackendState>() else {
                         break;
                     };
+                    let _ = refresh_all(&handle, &state).await;
                     let interval = state
                         .data
                         .lock()
@@ -373,7 +408,6 @@ pub fn run() {
                         .settings
                         .refresh_interval_seconds;
                     tokio::time::sleep(Duration::from_secs(interval)).await;
-                    let _ = refresh_all(&handle, &state).await;
                 }
             });
             Ok(())
