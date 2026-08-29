@@ -17,6 +17,7 @@ export type AppAdapter = {
   openSettings: (providerId?: string) => Promise<void>;
   setWidgetExpanded: (expanded: boolean) => Promise<void>;
   onUsageUpdated: (handler: (snapshot: DashboardSnapshot) => void) => () => void;
+  onSettingsUpdated: (handler: (settings: AppSettings) => void) => () => void;
   onSettingsFocus: (handler: (providerId: string) => void) => () => void;
 };
 
@@ -39,6 +40,20 @@ const tauriAdapter: AppAdapter = {
     let active = true;
     let unlisten: (() => void) | undefined;
     void listen<DashboardSnapshot>("usage-updated", (event) => {
+      if (active) handler(event.payload);
+    }).then((cleanup) => {
+      unlisten = cleanup;
+      if (!active) cleanup();
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  },
+  onSettingsUpdated: (handler) => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<AppSettings>("settings-updated", (event) => {
       if (active) handler(event.payload);
     }).then((cleanup) => {
       unlisten = cleanup;
@@ -104,6 +119,7 @@ export const createMockAdapter = (): AppAdapter => {
   let snapshot = mockSnapshot();
   let settings = structuredClone(defaultSettings);
   const listeners = new Set<(value: DashboardSnapshot) => void>();
+  const settingsListeners = new Set<(value: AppSettings) => void>();
   return {
     getWindowLabel: () => (typeof document !== "undefined" && document.body.dataset.view === "settings" ? "settings" : "widget"),
     getDashboard: async () => snapshot,
@@ -115,6 +131,7 @@ export const createMockAdapter = (): AppAdapter => {
     getSettings: async () => structuredClone(settings),
     saveSettings: async (value) => {
       settings = structuredClone(value);
+      settingsListeners.forEach((listener) => listener(structuredClone(settings)));
     },
     setOpencodeApiKey: async () => undefined,
     disconnectOpencode: async () => undefined,
@@ -123,6 +140,10 @@ export const createMockAdapter = (): AppAdapter => {
     onUsageUpdated: (handler) => {
       listeners.add(handler);
       return () => listeners.delete(handler);
+    },
+    onSettingsUpdated: (handler) => {
+      settingsListeners.add(handler);
+      return () => settingsListeners.delete(handler);
     },
     onSettingsFocus: () => () => undefined,
   };

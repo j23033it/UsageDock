@@ -46,8 +46,10 @@ p, small { text-wrap: pretty; }
 .root-error h1 { font-size: 1rem; }
 .root-error p { max-width: 30rem; color: var(--text-secondary); font-size: .8rem; }
 
-.widget-app { position: relative; min-height: 100%; width: 100%; }
-.widget-rail { position: fixed; z-index: 10; top: 1rem; right: var(--safe-right); bottom: calc(1rem + var(--safe-bottom)); display: flex; width: 4.85rem; flex-direction: column; align-items: center; padding: .8rem .45rem; border: 1px solid var(--border-subtle); border-radius: 2.4rem 0 0 2.4rem; background: var(--surface-app); box-shadow: -12px 12px 32px rgb(0 0 0 / 24%); }
+.widget-app { --widget-scale: 1; --rail-width: 4.85rem; position: relative; min-height: calc(100% / var(--widget-scale)); width: calc(100% / var(--widget-scale)); transform: scale(var(--widget-scale)); transform-origin: right center; }
+.widget-app--size-s { --rail-width: 3.5rem; }
+.widget-app--size-l { --rail-width: 5.75rem; }
+.widget-rail { position: fixed; z-index: 10; top: 1rem; right: var(--safe-right); bottom: calc(1rem + var(--safe-bottom)); display: flex; width: var(--rail-width); flex-direction: column; align-items: center; padding: .8rem .45rem; border: 1px solid var(--border-subtle); border-radius: 2.4rem 0 0 2.4rem; background: var(--surface-app); box-shadow: -12px 12px 32px rgb(0 0 0 / 24%); }
 .widget-rail__top, .widget-rail__bottom { display: flex; flex-direction: column; align-items: center; gap: .45rem; }
 .widget-rail__top { margin-bottom: .65rem; }
 .widget-rail__bottom { margin-top: auto; }
@@ -84,7 +86,7 @@ p, small { text-wrap: pretty; }
 .provider-mark__circle--opencode-go { stroke: var(--warning); }
 .provider-mark__path { fill: none; stroke: var(--text-primary); stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.55; }
 
-.widget-detail { position: fixed; z-index: 9; top: 1rem; right: calc(4.35rem + var(--safe-right)); bottom: calc(1rem + var(--safe-bottom)); display: flex; width: min(28rem, calc(100vw - 5rem)); align-items: center; pointer-events: none; }
+.widget-detail { position: fixed; z-index: 9; top: 1rem; right: calc(var(--rail-width) - .5rem + var(--safe-right)); bottom: calc(1rem + var(--safe-bottom)); display: flex; width: calc(100% - var(--rail-width) + .5rem); align-items: center; pointer-events: none; }
 .widget-detail__content { position: relative; width: 100%; max-height: calc(100vh - 2rem - var(--safe-bottom)); overflow: auto; padding: 1.35rem 1.5rem; border: 1px solid var(--border-subtle); border-radius: 1.35rem 0 0 1.35rem; background: var(--surface-panel); box-shadow: -16px 16px 40px rgb(0 0 0 / 30%); pointer-events: auto; }
 .widget-detail__content::after { content: ""; position: absolute; top: 50%; right: -1px; width: .7rem; height: 1.4rem; transform: translate(75%, -50%); clip-path: polygon(0 0, 100% 50%, 0 100%); background: var(--surface-panel); }
 .widget-detail__header, .provider-heading, .provider-meta, .window-row__heading, .window-row__meta, .settings-header, .settings-actions, .field-inline, .provider-order__row, .connection-actions { display: flex; align-items: center; }

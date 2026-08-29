@@ -14,7 +14,7 @@ use std::{
 };
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WindowEvent};
+use tauri::{Emitter, LogicalSize, Manager, PhysicalPosition, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutoStartManagerExt;
 use tauri_plugin_notification::NotificationExt;
 
@@ -23,6 +23,7 @@ struct BackendData {
     snapshot: DashboardSnapshot,
     refreshing: HashSet<ProviderId>,
     notified: HashSet<(ProviderId, model::WindowKind, u8)>,
+    widget_expanded: bool,
 }
 
 #[derive(Clone)]
@@ -278,6 +279,31 @@ fn reposition_widget(window: &tauri::WebviewWindow) {
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
+fn apply_widget_dimensions(
+    window: &tauri::WebviewWindow,
+    settings: &AppSettings,
+    expanded: bool,
+) -> Result<(), String> {
+    let (collapsed_width, expanded_width, base_height) = match settings.widget_size.as_str() {
+        "s" => (56_u32, 350_u32, 268_u32),
+        "l" => (92_u32, 430_u32, 372_u32),
+        _ => (76_u32, 388_u32, 320_u32),
+    };
+    let base_width = if expanded {
+        expanded_width
+    } else {
+        collapsed_width
+    };
+    let scale = u32::from(settings.scale_percent);
+    let width = (base_width * scale / 100).max(1);
+    let height = (base_height * scale / 100).max(1);
+    window
+        .set_size(LogicalSize::new(f64::from(width), f64::from(height)))
+        .map_err(|_| "ウィジェットサイズを変更できませんでした".to_string())?;
+    reposition_widget(window);
+    Ok(())
+}
+
 #[tauri::command]
 async fn get_dashboard(state: tauri::State<'_, BackendState>) -> Result<DashboardSnapshot, String> {
     Ok(get_dashboard_inner(&state))
@@ -305,11 +331,12 @@ async fn save_settings(
     let settings = settings.clamped();
     state.save_settings(&settings)?;
     let auto_start = settings.auto_start;
-    let snapshot = {
+    let settings_for_event = settings.clone();
+    let (snapshot, widget_expanded) = {
         let mut data = state.data.lock().expect("状態ロック");
         data.settings = settings;
         reconcile_providers(&mut data);
-        data.snapshot.clone()
+        (data.snapshot.clone(), data.widget_expanded)
     };
     if auto_start {
         let _ = app.autolaunch().enable();
@@ -317,8 +344,9 @@ async fn save_settings(
         let _ = app.autolaunch().disable();
     }
     if let Some(widget) = app.get_webview_window("widget") {
-        reposition_widget(&widget);
+        apply_widget_dimensions(&widget, &settings_for_event, widget_expanded)?;
     }
+    let _ = app.emit("settings-updated", settings_for_event);
     let _ = app.emit("usage-updated", snapshot);
     Ok(())
 }
@@ -373,25 +401,12 @@ async fn set_widget_expanded(
     let Some(window) = app.get_webview_window("widget") else {
         return Err("ウィジェットが見つかりません".into());
     };
-    let settings = state.data.lock().expect("状態ロック").settings.clone();
-    let (collapsed_width, expanded_width, base_height) = match settings.widget_size.as_str() {
-        "s" => (56, 350, 268),
-        "l" => (92, 430, 372),
-        _ => (76, 388, 320),
+    let settings = {
+        let mut data = state.data.lock().expect("状態ロック");
+        data.widget_expanded = expanded;
+        data.settings.clone()
     };
-    let base_width = if expanded {
-        expanded_width
-    } else {
-        collapsed_width
-    };
-    let scale = u32::from(settings.scale_percent);
-    let width = (base_width * scale / 100).max(1);
-    let height = (base_height * scale / 100).max(1);
-    window
-        .set_size(PhysicalSize::new(width, height))
-        .map_err(|_| "ウィジェットサイズを変更できませんでした".to_string())?;
-    reposition_widget(&window);
-    Ok(())
+    apply_widget_dimensions(&window, &settings, expanded)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -416,6 +431,7 @@ pub fn run() {
                     snapshot: initial_snapshot(&config_dir.join("snapshot.json")),
                     refreshing: HashSet::new(),
                     notified: HashSet::new(),
+                    widget_expanded: false,
                 })),
                 settings_path: config_dir.join("settings.json"),
                 snapshot_path: config_dir.join("snapshot.json"),
@@ -466,7 +482,7 @@ pub fn run() {
             }
             tray.build(app)?;
             if let Some(widget) = app.get_webview_window("widget") {
-                reposition_widget(&widget);
+                apply_widget_dimensions(&widget, &settings, false)?;
             }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

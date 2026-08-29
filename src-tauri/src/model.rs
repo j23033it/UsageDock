@@ -161,7 +161,7 @@ impl AppSettings {
         }
         self.provider_order = provider_order;
         self.notification_thresholds.warning_percent =
-            self.notification_thresholds.warning_percent.clamp(1, 100);
+            self.notification_thresholds.warning_percent.clamp(2, 100);
         self.notification_thresholds.critical_percent =
             self.notification_thresholds.critical_percent.clamp(1, 99);
         self.notification_thresholds.exhausted_percent = 0;
@@ -241,8 +241,8 @@ mod tests {
         assert_eq!(settings.scale_percent, 150);
         assert_eq!(settings.opacity_percent, 75);
         assert_eq!(settings.widget_size, "m");
-        assert_eq!(settings.notification_thresholds.warning_percent, 1);
-        assert_eq!(settings.notification_thresholds.critical_percent, 0);
+        assert_eq!(settings.notification_thresholds.warning_percent, 2);
+        assert_eq!(settings.notification_thresholds.critical_percent, 1);
         assert_eq!(settings.notification_thresholds.exhausted_percent, 0);
     }
 }
