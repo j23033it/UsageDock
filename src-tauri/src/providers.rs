@@ -14,6 +14,9 @@ use tokio::{
     time::{Duration, timeout},
 };
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[derive(Debug, Clone)]
 pub struct FetchResult {
     pub source: UsageSource,
@@ -38,7 +41,10 @@ pub async fn fetch_codex(settings: &AppSettings) -> Result<FetchResult, String> 
 async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, String> {
     let executable = settings.codex_path.as_deref().unwrap_or("codex");
     let task = async move {
-        let mut child = Command::new(executable)
+        let mut command = Command::new(executable);
+        #[cfg(target_os = "windows")]
+        command.creation_flags(CREATE_NO_WINDOW);
+        let mut child = command
             .args(["app-server", "--listen", "stdio://"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
