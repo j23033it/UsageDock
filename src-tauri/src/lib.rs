@@ -314,7 +314,7 @@ fn widget_position(
     let vertical_space = monitor_height.saturating_sub(window_height) as i32;
     let x = monitor_x + horizontal_space.saturating_sub(8);
     let centered_y = monitor_y + vertical_space / 2;
-    let upward_offset = (monitor_height as i32 * 12 / 100).min(vertical_space / 2);
+    let upward_offset = (monitor_height as i32 * 35 / 100).min(vertical_space / 2);
     (x, centered_y - upward_offset)
 }
 
@@ -634,7 +634,10 @@ mod tests {
     fn ウィジェットを右端かつ中央より上へ配置する() {
         let position = widget_position(0, 0, 1920, 1080, 52, 224);
         assert_eq!(position.0, 1860);
-        assert_eq!(position.1, 299);
+        assert_eq!(position.1, 50);
         assert!(position.1 < (1080 - 224) / 2);
+
+        let compact_position = widget_position(0, 0, 1280, 300, 52, 224);
+        assert_eq!(compact_position.1, 0);
     }
 }
