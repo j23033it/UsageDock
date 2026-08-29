@@ -46,6 +46,7 @@ const WidgetApp = ({ adapter }: { adapter: AppAdapter }) => {
   const close = useCallback(() => { setExpandedProviderId(null); setPinned(false); notifyExpanded(false); }, [notifyExpanded]);
   const load = useCallback(async () => { try { setError(null); setSnapshot(await adapter.getDashboard()); } catch (caught) { setError(caught instanceof Error ? caught.message : "使用量を取得できませんでした。"); } }, [adapter]);
   useEffect(() => { void load(); const cleanup = adapter.onUsageUpdated(setSnapshot); const clock = window.setInterval(() => setNow(new Date()), 30_000); return () => { cleanup(); window.clearInterval(clock); window.clearTimeout(closeTimer.current); window.clearTimeout(openTimer.current); }; }, [adapter, load]);
+  useEffect(() => { const handleWindowKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); }; window.addEventListener("keydown", handleWindowKeyDown); return () => window.removeEventListener("keydown", handleWindowKeyDown); }, [close]);
   const providers = snapshot?.providers ?? [];
   const selected = providers.find((provider) => provider.id === expandedProviderId) ?? providers[0];
   const scheduleOpen = (providerId: string) => { window.clearTimeout(closeTimer.current); window.clearTimeout(openTimer.current); openTimer.current = window.setTimeout(() => { setExpandedProviderId(providerId); notifyExpanded(true); }, 150); };
