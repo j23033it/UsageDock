@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
+import packageMetadata from "../package.json";
 import { createMockAdapter } from "./adapter";
 
 describe("ブラウザ用mock adapter", () => {
+  it("アプリのバージョンをパッケージ定義から返す", async () => {
+    expect(await createMockAdapter().getAppVersion()).toBe(packageMetadata.version);
+  });
+
   it("ダッシュボードを返し、更新イベントを通知する", async () => {
     const adapter = createMockAdapter();
     const snapshots = [] as string[];

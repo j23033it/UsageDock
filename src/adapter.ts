@@ -1,6 +1,8 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import packageMetadata from "../package.json";
 import type { AppSettings, DashboardSnapshot, ProviderUsage } from "./contracts";
 import { defaultSettings } from "./contracts";
 
@@ -8,6 +10,7 @@ export type WindowLabel = "widget" | "settings";
 
 export type AppAdapter = {
   getWindowLabel: () => WindowLabel;
+  getAppVersion: () => Promise<string>;
   getDashboard: () => Promise<DashboardSnapshot>;
   refreshUsage: () => Promise<DashboardSnapshot>;
   getSettings: () => Promise<AppSettings>;
@@ -28,6 +31,7 @@ const tauriAdapter: AppAdapter = {
     const label = getCurrentWindow().label;
     return label === "settings" ? "settings" : "widget";
   },
+  getAppVersion: getVersion,
   getDashboard: () => invoke<DashboardSnapshot>("get_dashboard"),
   refreshUsage: () => invoke<DashboardSnapshot>("refresh_usage"),
   getSettings: () => invoke<AppSettings>("get_settings"),
@@ -124,6 +128,7 @@ export const createMockAdapter = (): AppAdapter => {
   const settingsListeners = new Set<(value: AppSettings) => void>();
   return {
     getWindowLabel: () => (typeof document !== "undefined" && document.body.dataset.view === "settings" ? "settings" : "widget"),
+    getAppVersion: async () => packageMetadata.version,
     getDashboard: async () => snapshot,
     refreshUsage: async () => {
       snapshot = mockSnapshot();
