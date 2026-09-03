@@ -67,11 +67,9 @@ try {
 
     $previousCargoTarget = $env:CARGO_TARGET_DIR
     $previousSigningKey = $env:TAURI_SIGNING_PRIVATE_KEY
-    $previousSigningKeyPassword = $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
     $previousUpdateEndpoint = $env:USAGEDOCK_UPDATE_ENDPOINT
     $env:CARGO_TARGET_DIR = $temporaryTarget
     $env:TAURI_SIGNING_PRIVATE_KEY = $signingKey
-    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
     $env:USAGEDOCK_UPDATE_ENDPOINT = $updateEndpoint
     try {
         npm run test
@@ -86,7 +84,8 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw 'Rustテストに失敗しました。'
         }
-        npm run tauri build -- --bundles nsis
+        # Windowsでは空の環境変数が未設定扱いになるため、空パスワードを標準入力へ明示します。
+        '' | npm run tauri build -- --bundles nsis
         if ($LASTEXITCODE -ne 0) {
             throw 'インストーラーの生成に失敗しました。'
         }
@@ -154,12 +153,6 @@ try {
         }
         else {
             $env:TAURI_SIGNING_PRIVATE_KEY = $previousSigningKey
-        }
-        if ($null -eq $previousSigningKeyPassword) {
-            Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
-        }
-        else {
-            $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $previousSigningKeyPassword
         }
         if ($null -eq $previousUpdateEndpoint) {
             Remove-Item Env:USAGEDOCK_UPDATE_ENDPOINT -ErrorAction SilentlyContinue
