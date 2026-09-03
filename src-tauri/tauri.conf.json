@@ -2,7 +2,6 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "UsageDock",
   "mainBinaryName": "UsageDock",
-  "version": "0.2.9",
   "identifier": "app.usagedock.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -37,6 +36,9 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "windows": {
+      "allowDowngrades": false
+    },
     "shortDescription": "AIサブスクリプション残量を画面端に表示します",
     "longDescription": "CodexとOpenCode Goの残量を、Windowsの画面右端に固定表示する常駐アプリです。"
   }

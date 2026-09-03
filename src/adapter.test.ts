@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import packageMetadata from "../package.json";
 import { createMockAdapter } from "./adapter";
 
 describe("ブラウザ用mock adapter", () => {
-  it("アプリのバージョンをパッケージ定義から返す", async () => {
-    expect(await createMockAdapter().getAppVersion()).toBe(packageMetadata.version);
+  it("ブラウザ開発時は開発版と表示する", async () => {
+    expect(await createMockAdapter().getAppVersion()).toBe("開発版");
   });
 
   it("ダッシュボードを返し、更新イベントを通知する", async () => {

@@ -52,7 +52,7 @@ OpenCode GoのAPIキーはWindows Credential Managerに保存します。設定J
 
 ### 更新する
 
-UsageDockを終了してから、新しく生成したNSISインストーラーを実行します。保存済みの設定とAPIキーは引き継がれます。旧WinForms版の `CodexBar.exe` は使用しません。
+`release\UsageDock-x64-setup.exe` を実行します。インストーラーは起動中のUsageDockを確認して終了させてから更新するため、実行ファイルを手作業で上書きしないでください。保存済みの設定とAPIキーは引き継がれ、古いバージョンへの上書きは拒否されます。旧WinForms版の `CodexBar.exe` は使用しません。
 
 ## ローカルでビルドする
 
@@ -93,10 +93,16 @@ npm run check
 ### Windowsインストーラーを生成する
 
 ```powershell
-npm run tauri build -- --bundles nsis
+npm run release -- 0.3.0
 ```
 
-生成物は `src-tauri\target\release\bundle\nsis` に出力されます。通常利用では、このフォルダーの `UsageDock_*_x64-setup.exe` を実行してインストールします。
+リリース前に、機能変更と検証をコミットして作業ツリーをクリーンにします。引数には現在より大きい配布バージョンを指定してください。
+
+アプリのバージョンは `src-tauri\Cargo.toml` だけを編集元とし、`tauri.conf.json` はその値を自動的に使用します。機能追加のたびには採番せず、配布するときだけリリースコマンドで更新します。
+
+リリースコマンドは一時フォルダーで検証とNSISビルドを行い、生成物を `release\UsageDock-x64-setup.exe` の1本へ集約します。`release\release.json` には配布バージョンとSHA-256を記録します。一時ビルドは完了時に削除されるため、`src-tauri\target` に過去バージョンの実行ファイルやインストーラーを積み上げません。
+
+成功後は変更された `src-tauri\Cargo.toml` と `src-tauri\Cargo.lock` を確認してコミットし、必要なら同じ番号のローカルGitタグを付けます。過去版はGitで追跡し、ローカルに複数のインストーラーを保管しません。
 
 ## データ取得と状態表示
 

@@ -2,7 +2,6 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import packageMetadata from "../package.json";
 import type { AppSettings, DashboardSnapshot, ProviderUsage } from "./contracts";
 import { defaultSettings } from "./contracts";
 
@@ -128,7 +127,7 @@ export const createMockAdapter = (): AppAdapter => {
   const settingsListeners = new Set<(value: AppSettings) => void>();
   return {
     getWindowLabel: () => (typeof document !== "undefined" && document.body.dataset.view === "settings" ? "settings" : "widget"),
-    getAppVersion: async () => packageMetadata.version,
+    getAppVersion: async () => "開発版",
     getDashboard: async () => snapshot,
     refreshUsage: async () => {
       snapshot = mockSnapshot();
