@@ -63,22 +63,33 @@ const WidgetApp = ({ adapter }: { adapter: AppAdapter }) => {
   return <main className={`widget-app widget-app--${pinned ? "pinned" : "hover"} widget-app--size-${settings.widgetSize}`} style={widgetStyle} onMouseEnter={() => selected && scheduleOpen(selected.id)} onMouseLeave={scheduleClose}>{selected && expandedProviderId && <div className="widget-detail" onMouseEnter={() => window.clearTimeout(closeTimer.current)} onMouseLeave={scheduleClose}><ProviderDetail provider={selected} now={now} /></div>}<aside className="widget-rail" aria-label="使用量ウィジェット"><div className="widget-rail__top"><span className="widget-brand" aria-label="UsageDock">UD</span></div><div className="provider-stack">{snapshot ? providers.map((provider) => <button key={provider.id} type="button" className={`provider-button ${expandedProviderId === provider.id ? "provider-button--selected" : ""}`} aria-label={`${provider.displayName} ${formatPercent(provider.windows[0]?.remainingPercent ?? null)}残り`} aria-expanded={expandedProviderId === provider.id} onMouseEnter={() => scheduleOpen(provider.id)} onFocus={() => selectProvider(provider.id)} onClick={() => selectProvider(provider.id, true)} onContextMenu={(event) => { event.preventDefault(); void adapter.openSettings(provider.id); }} onKeyDown={(event) => handleKeyDown(event, provider.id)}><UsageRing value={provider.windows[0]?.remainingPercent ?? null} provider={provider} size={ringSize} /><span className={`provider-button__percent provider-button__percent--${remainingTone(provider.windows[0]?.remainingPercent ?? null)}`}>{formatPercent(provider.windows[0]?.remainingPercent ?? null)}</span><span className={`provider-button__status provider-button__status--${provider.status}`} aria-label={statusLabel(provider.status)}>{statusIcon(provider.status)}</span></button>) : <LoadingState label="読込" />}</div><div className="widget-rail__bottom"><button type="button" className="icon-button" aria-label="使用量を更新" onClick={() => void adapter.refreshUsage()}><RefreshGlyph size={14} /></button><button type="button" className="icon-button" aria-label="設定を開く" onClick={() => void adapter.openSettings()}><SettingsGlyph size={14} /></button></div></aside></main>;
 };
 
-const navItems = [["general", "一般"], ["widget", "ウィジェット"], ["providers", "プロバイダー"], ["notifications", "通知"], ["advanced", "詳細設定"], ["about", "アプリ情報"]] as const;
-type SettingsSection = typeof navItems[number][0];
+const navItems = [
+  { id: "general", label: "一般", description: "起動方法とデータの更新間隔を設定します。" },
+  { id: "widget", label: "ウィジェット", description: "画面右端に表示するウィジェットの見た目を調整します。" },
+  { id: "providers", label: "プロバイダー", description: "アカウントの接続とウィジェットへの表示を管理します。" },
+  { id: "notifications", label: "通知", description: "利用枠が少なくなったときの通知条件を設定します。" },
+  { id: "advanced", label: "詳細設定", description: "Codexの実行環境と旧環境向けの互換設定です。" },
+  { id: "about", label: "アプリ情報", description: "現在のバージョンを確認し、UsageDockを更新します。" },
+] as const;
+type SettingsSection = typeof navItems[number]["id"];
+type ActionMessage = { tone: "success" | "error"; text: string };
 const settingsWithDefaults = (value: AppSettings): AppSettings => ({ ...defaultSettings, ...value, notificationThresholds: { ...defaultSettings.notificationThresholds, ...value.notificationThresholds }, providerOrder: value.providerOrder?.length ? value.providerOrder : defaultSettings.providerOrder });
+const settingsAreEqual = (left: AppSettings, right: AppSettings) => JSON.stringify(left) === JSON.stringify(right);
 
 const SettingsApp = ({ adapter }: { adapter: AppAdapter }) => {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [savedSettings, setSavedSettings] = useState<AppSettings>(defaultSettings);
   const [appVersion, setAppVersion] = useState("取得中…");
   const [section, setSection] = useState<SettingsSection>(() => new URLSearchParams(window.location.search).has("provider") ? "providers" : "general");
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "success" | "error">("loading");
-  const [message, setMessage] = useState("");
+  const [saveMessage, setSaveMessage] = useState<ActionMessage | null>(null);
+  const [connectionMessage, setConnectionMessage] = useState<ActionMessage | null>(null);
   const [connections, setConnections] = useState<ConnectionOverview | null>(null);
   const [codexApiKey, setCodexApiKey] = useState("");
   const [openCodeApiKey, setOpenCodeApiKey] = useState("");
   const [connectionTask, setConnectionTask] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState<"codex" | "opencode" | null>(null);
-  useEffect(() => { let active = true; void adapter.getSettings().then((value) => { if (active) { setSettings(settingsWithDefaults(value)); setStatus("idle"); } }).catch((caught) => { if (active) { setStatus("error"); setMessage(caught instanceof Error ? caught.message : "設定を読み込めませんでした。"); } }); return () => { active = false; }; }, [adapter]);
+  useEffect(() => { let active = true; void adapter.getSettings().then((value) => { if (active) { const normalized = settingsWithDefaults(value); setSettings(normalized); setSavedSettings(normalized); setStatus("idle"); } }).catch((caught) => { if (active) { setStatus("error"); setSaveMessage({ tone: "error", text: caught instanceof Error ? caught.message : "設定を読み込めませんでした。" }); } }); return () => { active = false; }; }, [adapter]);
   useEffect(() => { let active = true; void adapter.getAppVersion().then((version) => { if (active) setAppVersion(version); }).catch(() => { if (active) setAppVersion("不明"); }); return () => { active = false; }; }, [adapter]);
   useEffect(() => {
     let active = true;
@@ -86,30 +97,45 @@ const SettingsApp = ({ adapter }: { adapter: AppAdapter }) => {
       .then((value) => { if (active) setConnections(value); })
       .catch((caught) => {
         if (active) {
-          setStatus("error");
-          setMessage(caught instanceof Error ? caught.message : "接続状態を読み込めませんでした。");
+          setConnectionMessage({ tone: "error", text: caught instanceof Error ? caught.message : "接続状態を読み込めませんでした。" });
         }
       });
     const cleanup = adapter.onConnectionsUpdated((value) => { if (active) setConnections(value); });
     return () => { active = false; cleanup(); };
   }, [adapter]);
-  useEffect(() => adapter.onSettingsFocus(() => setSection("providers")), [adapter]);
-  const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
-  const save = async (event: FormEvent) => { event.preventDefault(); if (status === "saving") return; setStatus("saving"); try { await adapter.saveSettings(settings); setStatus("success"); setMessage("設定を保存しました。"); } catch (caught) { setStatus("error"); setMessage(caught instanceof Error ? caught.message : "設定を保存できませんでした。"); } };
+  useEffect(() => adapter.onSettingsFocus(() => { setSection("providers"); setSaveMessage(null); }), [adapter]);
+  const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    setSettings((current) => ({ ...current, [key]: value }));
+    setStatus("idle");
+    setSaveMessage(null);
+  };
+  const isDirty = !settingsAreEqual(settings, savedSettings);
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (status === "saving" || !isDirty) return;
+    setStatus("saving");
+    setSaveMessage(null);
+    try {
+      await adapter.saveSettings(settings);
+      setSavedSettings(structuredClone(settings));
+      setStatus("success");
+      setSaveMessage({ tone: "success", text: "変更を保存しました。" });
+    } catch (caught) {
+      setStatus("error");
+      setSaveMessage({ tone: "error", text: caught instanceof Error ? caught.message : "設定を保存できませんでした。" });
+    }
+  };
   const runConnectionTask = async (task: string, action: () => Promise<void>, successMessage: string) => {
     if (connectionTask) return;
     setConnectionTask(task);
-    setStatus("idle");
-    setMessage("");
+    setConnectionMessage(null);
     setConfirmDisconnect(null);
     try {
       await action();
-      setStatus("success");
-      setMessage(successMessage);
+      setConnectionMessage({ tone: "success", text: successMessage });
       setConnections(await adapter.getConnections());
     } catch (caught) {
-      setStatus("error");
-      setMessage(caught instanceof Error ? caught.message : "アカウント操作を完了できませんでした。");
+      setConnectionMessage({ tone: "error", text: caught instanceof Error ? caught.message : "アカウント操作を完了できませんでした。" });
     } finally {
       setConnectionTask(null);
     }
@@ -136,7 +162,28 @@ const SettingsApp = ({ adapter }: { adapter: AppAdapter }) => {
     void runConnectionTask(`disconnect-${provider}`, action, provider === "codex" ? "Codexの接続を解除しました。" : "OpenCode Goの接続を解除しました。");
   };
   const moveProvider = (index: number, direction: -1 | 1) => update("providerOrder", moveProviderOrder(settings.providerOrder, index, direction));
-  return <main className="settings-app"><nav className="settings-nav" aria-label="設定カテゴリー"><div className="settings-nav__brand"><span className="widget-brand">UD</span><div><strong>UsageDock</strong><small>設定</small></div></div>{navItems.map(([id, label]) => <button type="button" key={id} className={section === id ? "settings-nav__item settings-nav__item--active" : "settings-nav__item"} aria-current={section === id ? "page" : undefined} onClick={() => setSection(id)}>{label}</button>)}</nav><form className="settings-content" onSubmit={(event) => void save(event)}><header className="settings-header"><div><p className="eyebrow">設定</p><h1>{navItems.find(([id]) => id === section)?.[1]}</h1></div><div className="settings-actions">{message && <p className={`save-message save-message--${status === "error" ? "error" : "success"}`} role={status === "error" ? "alert" : "status"}>{message}</p>}<button type="submit" className="button button--primary" disabled={status === "loading" || status === "saving"}>{status === "saving" ? "保存中…" : "変更を保存"}</button></div></header>{status === "loading" ? <LoadingState label="設定を読み込み中" /> : <SettingsSectionContent adapter={adapter} section={section} settings={settings} appVersion={appVersion} connections={connections} codexApiKey={codexApiKey} setCodexApiKey={setCodexApiKey} openCodeApiKey={openCodeApiKey} setOpenCodeApiKey={setOpenCodeApiKey} connectionTask={connectionTask} confirmDisconnect={confirmDisconnect} update={update} startCodexLogin={(mode) => void startCodexLogin(mode)} cancelCodexLogin={() => void runConnectionTask("codex-cancel", adapter.cancelCodexLogin, "Codex認証をキャンセルしました。")} connectCodexApiKey={() => void connectCodexApiKey()} connectOpenCode={() => void connectOpenCode()} moveProvider={moveProvider} disconnectProvider={disconnectProvider} />}</form></main>;
+  const currentSection = navItems.find((item) => item.id === section) ?? navItems[0];
+  const selectSection = (nextSection: SettingsSection) => {
+    setSection(nextSection);
+    setSaveMessage(null);
+    setConfirmDisconnect(null);
+  };
+  return <main className="settings-app">
+    <nav className="settings-nav" aria-label="設定カテゴリー">
+      <div className="settings-nav__brand"><span className="widget-brand" aria-hidden="true">UD</span><div><strong>UsageDock</strong><small>設定</small></div></div>
+      <div className="settings-nav__items">{navItems.map(({ id, label }) => <button type="button" key={id} className={section === id ? "settings-nav__item settings-nav__item--active" : "settings-nav__item"} aria-current={section === id ? "page" : undefined} onClick={() => selectSection(id)}>{label}</button>)}</div>
+    </nav>
+    <form className="settings-content" onSubmit={(event) => void save(event)}>
+      <header className="settings-header">
+        <div className="settings-header__copy"><h1 id="settings-page-title">{currentSection.label}</h1><p>{currentSection.description}</p></div>
+        <div className="settings-actions">
+          {saveMessage && <p className={`action-message action-message--${saveMessage.tone}`} role={saveMessage.tone === "error" ? "alert" : "status"}>{saveMessage.text}</p>}
+          {isDirty && <><span className="unsaved-indicator">未保存の変更</span><button type="submit" className="button button--primary" disabled={status === "loading" || status === "saving"}>{status === "saving" ? "保存中…" : "変更を保存"}</button></>}
+        </div>
+      </header>
+      {status === "loading" ? <LoadingState label="設定を読み込み中" /> : <SettingsSectionContent adapter={adapter} section={section} settings={settings} appVersion={appVersion} connections={connections} connectionMessage={connectionMessage} codexApiKey={codexApiKey} setCodexApiKey={setCodexApiKey} openCodeApiKey={openCodeApiKey} setOpenCodeApiKey={setOpenCodeApiKey} connectionTask={connectionTask} confirmDisconnect={confirmDisconnect} update={update} startCodexLogin={(mode) => void startCodexLogin(mode)} cancelCodexLogin={() => void runConnectionTask("codex-cancel", adapter.cancelCodexLogin, "Codex認証をキャンセルしました。")} connectCodexApiKey={() => void connectCodexApiKey()} connectOpenCode={() => void connectOpenCode()} moveProvider={moveProvider} disconnectProvider={disconnectProvider} />}
+    </form>
+  </main>;
 };
 
 type SettingsContentProps = {
@@ -145,6 +192,7 @@ type SettingsContentProps = {
   settings: AppSettings;
   appVersion: string;
   connections: ConnectionOverview | null;
+  connectionMessage: ActionMessage | null;
   codexApiKey: string;
   setCodexApiKey: (value: string) => void;
   openCodeApiKey: string;
@@ -166,13 +214,15 @@ const ConnectionBadge = ({ status }: { status: ConnectionOverview["codex"]["stat
 };
 
 const ProviderConnections = (props: Omit<SettingsContentProps, "section" | "settings" | "appVersion" | "update" | "moveProvider">) => {
-  const { connections, codexApiKey, setCodexApiKey, openCodeApiKey, setOpenCodeApiKey, connectionTask, confirmDisconnect, startCodexLogin, cancelCodexLogin, connectCodexApiKey, connectOpenCode, disconnectProvider } = props;
+  const { connections, connectionMessage, codexApiKey, setCodexApiKey, openCodeApiKey, setOpenCodeApiKey, connectionTask, confirmDisconnect, startCodexLogin, cancelCodexLogin, connectCodexApiKey, connectOpenCode, disconnectProvider } = props;
   if (!connections) return <LoadingState label="接続状態を確認中" />;
   const codex = connections.codex;
   const codexConnected = codex.status === "connected";
   const codexBusy = connectionTask?.startsWith("codex") || codex.status === "connecting";
   const openCodeConnected = connections.openCodeGo.status === "connected";
-  return <div className="connection-list">
+  return <>
+    {connectionMessage && <p className={`section-message section-message--${connectionMessage.tone}`} role={connectionMessage.tone === "error" ? "alert" : "status"}>{connectionMessage.text}</p>}
+    <div className="connection-list">
     <article className="connection-card" aria-labelledby="codex-connection-title">
       <div className="connection-card__header"><div className="connection-card__provider"><img src={openAiIconUrl} width="24" height="24" alt="" /><div><h3 id="codex-connection-title">Codex</h3><p>ChatGPTサブスクリプション / OpenAI API</p></div></div><ConnectionBadge status={codex.status} /></div>
       {codex.status === "connecting" && codex.pendingLogin ? <div className="auth-progress" role="status"><strong>ブラウザーで認証を完了してください</strong>{codex.pendingLogin.userCode && <div className="device-code"><span>認証コード</span><code>{codex.pendingLogin.userCode}</code></div>}<p>完了すると、この画面へ自動で反映されます。</p><button type="button" className="button button--ghost" disabled={connectionTask === "codex-cancel"} onClick={cancelCodexLogin}>認証をキャンセル</button></div> : <>
@@ -189,7 +239,8 @@ const ProviderConnections = (props: Omit<SettingsContentProps, "section" | "sett
       <label className="field"><span>{openCodeConnected ? "新しいAPIキー" : "APIキー"}</span><input type="password" autoComplete="off" value={openCodeApiKey} onChange={(event) => setOpenCodeApiKey(event.target.value)} placeholder={openCodeConnected ? "変更するときだけ入力" : "APIキーを入力"} /></label>
       <div className="connection-actions"><button type="button" className="button button--secondary" disabled={!openCodeApiKey || Boolean(connectionTask)} onClick={connectOpenCode}>{connectionTask === "opencode-api" ? "確認中…" : openCodeConnected ? "キーを更新" : "接続"}</button>{openCodeConnected && <button type="button" className={`button ${confirmDisconnect === "opencode" ? "button--danger" : "button--ghost"}`} disabled={Boolean(connectionTask)} onClick={() => disconnectProvider("opencode")}>{confirmDisconnect === "opencode" ? "もう一度押して解除" : "接続を解除"}</button>}</div>
     </article>
-  </div>;
+    </div>
+  </>;
 };
 
 const AppUpdatePanel = ({ adapter, appVersion }: { adapter: AppAdapter; appVersion: string }) => {
@@ -220,17 +271,41 @@ const AppUpdatePanel = ({ adapter, appVersion }: { adapter: AppAdapter; appVersi
       setUpdateState("error");
     }
   };
-  return <div className="settings-card update-card"><div className="update-card__heading"><div><h3>UsageDock</h3><p>現在のバージョン {appVersion}</p></div>{update?.status === "available" && <span className="connection-badge connection-badge--connecting">新しいバージョン</span>}</div>{update?.status === "available" ? <><div className="update-available"><strong>バージョン {update.availableVersion}</strong>{update.notes && <p>{update.notes}</p>}</div><button type="button" className="button button--primary" disabled={updateState === "installing"} onClick={() => void install()}>{updateState === "installing" ? "更新を準備中…" : "更新して再起動"}</button></> : <><p className="muted">{update?.status === "current" ? "最新バージョンです。" : update?.status === "unconfigured" ? "この開発ビルドには更新配信先が設定されていません。" : "署名済みの新しいバージョンを確認できます。"}</p><button type="button" className="button button--secondary" disabled={updateState === "checking"} onClick={() => void check()}>{updateState === "checking" ? "確認中…" : "更新を確認"}</button></>}{updateError && <p className="inline-error" role="alert">{updateError}</p>}</div>;
+  const updateMessage = update?.status === "current"
+    ? "最新バージョンを使用しています。"
+    : update?.status === "unconfigured"
+      ? "この開発ビルドには更新配信先が設定されていません。"
+      : "更新プログラムが公開されているか確認できます。";
+  return <section className="settings-card update-card" aria-labelledby="app-update-title">
+    <div className="update-card__heading">
+      <div className="update-card__identity">
+        <span className="app-mark" aria-hidden="true"><span className="widget-brand">UD</span></span>
+        <div><h2 id="app-update-title">UsageDock</h2><p>Windows用デスクトップアプリ</p></div>
+      </div>
+      <span className="version-badge">バージョン {appVersion}</span>
+    </div>
+    {update?.status === "available" ? <div className="update-available"><div><span className="connection-badge connection-badge--connecting">新しいバージョン</span><strong>バージョン {update.availableVersion}</strong></div>{update.notes && <p>{update.notes}</p>}</div> : <p className="update-card__status" role={update?.status === "current" ? "status" : undefined}>{updateMessage}</p>}
+    <div className="update-card__footer">
+      <p>設定と認証情報は更新後も保持されます。</p>
+      {update?.status === "available"
+        ? <button type="button" className="button button--primary" disabled={updateState === "installing"} onClick={() => void install()}>{updateState === "installing" ? "更新を準備中…" : "更新して再起動"}</button>
+        : <button type="button" className="button button--secondary" disabled={updateState === "checking"} onClick={() => void check()}>{updateState === "checking" ? "確認中…" : "更新を確認"}</button>}
+    </div>
+    {updateError && <p className="inline-error" role="alert">{updateError}</p>}
+  </section>;
 };
 
 const SettingsSectionContent = (props: SettingsContentProps) => {
   const { section, settings, appVersion, update, moveProvider } = props;
-  if (section === "general") return <section className="settings-section"><div className="section-intro"><h2>基本設定</h2><p>UsageDockの起動とデータ更新を調整します。</p></div><div className="settings-card settings-grid"><label className="field"><span>更新間隔</span><span className="field-inline"><input type="number" min="30" max="900" step="1" value={settings.refreshIntervalSeconds} onChange={(event) => update("refreshIntervalSeconds", Number(event.target.value))} /><small>秒（30〜900）</small></span></label><label className="toggle-field"><input type="checkbox" checked={settings.autoStart} onChange={(event) => update("autoStart", event.target.checked)} /><span><strong>Windows起動時に起動</strong><small>ログイン後に自動でUsageDockを起動します。</small></span></label><label className="toggle-field"><input type="checkbox" checked={settings.startInBackground} onChange={(event) => update("startInBackground", event.target.checked)} /><span><strong>バックグラウンドで開始</strong><small>起動時に設定画面を表示しません。</small></span></label></div></section>;
-  if (section === "widget") return <section className="settings-section"><div className="section-intro"><h2>ウィジェット</h2><p>右端に固定されるウィジェットの見た目を調整します。</p></div><div className="settings-card settings-grid"><label className="field"><span>サイズ</span><select value={settings.widgetSize} onChange={(event) => update("widgetSize", event.target.value as AppSettings["widgetSize"])}><option value="s">S — コンパクト</option><option value="m">M — 標準</option><option value="l">L — 詳細</option></select></label><label className="field"><span>表示倍率</span><span className="field-inline"><input type="number" min="75" max="150" value={settings.scalePercent} onChange={(event) => update("scalePercent", Number(event.target.value))} /><small>%（75〜150）</small></span></label><label className="field"><span>不透明度</span><span className="field-inline"><input type="number" min="75" max="100" value={settings.opacityPercent} onChange={(event) => update("opacityPercent", Number(event.target.value))} /><small>%（75〜100）</small></span></label></div></section>;
-  if (section === "providers") return <section className="settings-section"><div className="section-intro"><h2>アカウントとプロバイダー</h2><p>認証の追加・更新・解除と、ウィジェットへ表示するサービスを管理します。</p></div><ProviderConnections {...props} /><div className="settings-card provider-display-settings"><h3>ウィジェット表示</h3><label className="toggle-field"><input type="checkbox" checked={settings.codexEnabled} onChange={(event) => update("codexEnabled", event.target.checked)} /><span><strong>Codexを表示</strong><small>認証済みアカウントの利用枠を表示します。</small></span></label><label className="toggle-field"><input type="checkbox" checked={settings.openCodeGoEnabled} onChange={(event) => update("openCodeGoEnabled", event.target.checked)} /><span><strong>OpenCode Goを表示</strong><small>登録済みAPIキーの利用枠を表示します。</small></span></label><div className="provider-order"><h3>表示順</h3>{settings.providerOrder.map((id, index) => <div className="provider-order__row" key={id}><span>{index + 1}</span><strong>{id === "codex" ? "Codex" : "OpenCode Go"}</strong><button type="button" className="button button--small" aria-label={`${id}を上へ`} disabled={index === 0} onClick={() => moveProvider(index, -1)}>上へ</button><button type="button" className="button button--small" aria-label={`${id}を下へ`} disabled={index === settings.providerOrder.length - 1} onClick={() => moveProvider(index, 1)}>下へ</button></div>)}</div></div></section>;
-  if (section === "notifications") return <section className="settings-section"><div className="section-intro"><h2>通知</h2><p>残量が少なくなったときの通知条件です。使い切ったときは常に0%として通知します。</p></div><div className="settings-card settings-grid"><label className="toggle-field"><input type="checkbox" checked={settings.notificationThresholds.enabled} onChange={(event) => update("notificationThresholds", { ...settings.notificationThresholds, enabled: event.target.checked })} /><span><strong>残量通知を有効にする</strong><small>閾値を下回ったときに一度だけ通知します。</small></span></label><label className="field"><span>注意の閾値</span><span className="field-inline"><input type="number" min="2" max="100" value={settings.notificationThresholds.warningPercent} onChange={(event) => update("notificationThresholds", { ...settings.notificationThresholds, warningPercent: Number(event.target.value) })} /><small>%以下</small></span></label><label className="field"><span>危険の閾値</span><span className="field-inline"><input type="number" min="1" max="99" value={settings.notificationThresholds.criticalPercent} onChange={(event) => update("notificationThresholds", { ...settings.notificationThresholds, criticalPercent: Number(event.target.value) })} /><small>%以下</small></span></label><div className="field"><span>使い切り通知</span><span className="field-inline"><input type="number" value={settings.notificationThresholds.exhaustedPercent} disabled aria-label="使い切り通知の閾値" /><small>%</small></span></div></div></section>;
-  if (section === "advanced") return <section className="settings-section"><div className="section-intro"><h2>詳細設定</h2><p>通常は変更不要です。Codexデスクトップ同梱版を自動検出します。</p></div><div className="settings-card settings-grid"><label className="field field--wide"><span>Codex実行ファイルのパス</span><input type="text" value={settings.codexPath ?? ""} onChange={(event) => update("codexPath", event.target.value || null)} placeholder="自動検出（推奨）" /><small>指定した場合のみ、その実行ファイルを使用します。</small></label><label className="toggle-field"><input type="checkbox" checked={settings.forceCompatibilityMode} onChange={(event) => update("forceCompatibilityMode", event.target.checked)} /><span><strong>ローカルログ互換モード</strong><small>App Serverを使えない旧環境だけで有効にします。アプリ内認証は利用できません。</small></span></label></div></section>;
-  return <section className="settings-section"><div className="section-intro"><h2>アプリ情報</h2><p>UsageDockのバージョンと更新を管理します。</p></div><AppUpdatePanel adapter={props.adapter} appVersion={appVersion} /><div className="settings-card about-card about-card--secondary"><span className="about-card__mark"><span className="widget-brand" aria-label="UsageDock">UD</span></span><div><h3>常駐ウィジェット</h3><p className="muted">起動はスタートメニューの「UsageDock」を使用します。</p><p className="muted">更新前後も設定と資格情報は引き継がれます。</p></div></div></section>;
+  if (section === "general") return <section className="settings-section settings-stack" aria-labelledby="settings-page-title">
+    <section className="settings-card" aria-labelledby="refresh-settings-title"><h2 className="settings-card__title" id="refresh-settings-title">データ更新</h2><label className="field"><span>更新間隔</span><span className="field-inline"><input type="number" min="30" max="900" step="1" value={settings.refreshIntervalSeconds} onChange={(event) => update("refreshIntervalSeconds", Number(event.target.value))} /><small>秒（30〜900）</small></span></label></section>
+    <section className="settings-card" aria-labelledby="startup-settings-title"><h2 className="settings-card__title" id="startup-settings-title">起動</h2><div className="toggle-list"><label className="toggle-field"><input type="checkbox" checked={settings.autoStart} onChange={(event) => update("autoStart", event.target.checked)} /><span><strong>Windows起動時に起動</strong><small>サインイン後にUsageDockを自動で起動します。</small></span></label><label className="toggle-field"><input type="checkbox" checked={settings.startInBackground} onChange={(event) => update("startInBackground", event.target.checked)} /><span><strong>バックグラウンドで開始</strong><small>起動時は設定画面を開かず、ウィジェットだけを表示します。</small></span></label></div></section>
+  </section>;
+  if (section === "widget") return <section className="settings-section" aria-labelledby="settings-page-title"><div className="settings-card settings-grid"><label className="field"><span>サイズ</span><select value={settings.widgetSize} onChange={(event) => update("widgetSize", event.target.value as AppSettings["widgetSize"])}><option value="s">S — コンパクト</option><option value="m">M — 標準</option><option value="l">L — 詳細</option></select></label><label className="field"><span>表示倍率</span><span className="field-inline"><input type="number" min="75" max="150" value={settings.scalePercent} onChange={(event) => update("scalePercent", Number(event.target.value))} /><small>%（75〜150）</small></span></label><label className="field"><span>不透明度</span><span className="field-inline"><input type="number" min="75" max="100" value={settings.opacityPercent} onChange={(event) => update("opacityPercent", Number(event.target.value))} /><small>%（75〜100）</small></span></label></div></section>;
+  if (section === "providers") return <section className="settings-section" aria-labelledby="settings-page-title"><ProviderConnections {...props} /><section className="settings-card provider-display-settings" aria-labelledby="provider-display-title"><h2 className="settings-card__title" id="provider-display-title">ウィジェット表示</h2><label className="toggle-field"><input type="checkbox" checked={settings.codexEnabled} onChange={(event) => update("codexEnabled", event.target.checked)} /><span><strong>Codexを表示</strong><small>認証済みアカウントの利用枠を表示します。</small></span></label><label className="toggle-field"><input type="checkbox" checked={settings.openCodeGoEnabled} onChange={(event) => update("openCodeGoEnabled", event.target.checked)} /><span><strong>OpenCode Goを表示</strong><small>登録済みAPIキーの利用枠を表示します。</small></span></label><div className="provider-order"><h3>表示順</h3>{settings.providerOrder.map((id, index) => { const providerName = id === "codex" ? "Codex" : "OpenCode Go"; return <div className="provider-order__row" key={id}><span>{index + 1}</span><strong>{providerName}</strong><button type="button" className="button button--small" aria-label={`${providerName}を上へ`} disabled={index === 0} onClick={() => moveProvider(index, -1)}>上へ</button><button type="button" className="button button--small" aria-label={`${providerName}を下へ`} disabled={index === settings.providerOrder.length - 1} onClick={() => moveProvider(index, 1)}>下へ</button></div>; })}</div></section></section>;
+  if (section === "notifications") return <section className="settings-section" aria-labelledby="settings-page-title"><div className="settings-card settings-grid"><label className="toggle-field field--wide"><input type="checkbox" checked={settings.notificationThresholds.enabled} onChange={(event) => update("notificationThresholds", { ...settings.notificationThresholds, enabled: event.target.checked })} /><span><strong>残量通知を有効にする</strong><small>設定した閾値を下回ったときに一度だけ通知します。</small></span></label><label className="field"><span>注意の閾値</span><span className="field-inline"><input type="number" min="2" max="100" disabled={!settings.notificationThresholds.enabled} value={settings.notificationThresholds.warningPercent} onChange={(event) => update("notificationThresholds", { ...settings.notificationThresholds, warningPercent: Number(event.target.value) })} /><small>%以下</small></span></label><label className="field"><span>危険の閾値</span><span className="field-inline"><input type="number" min="1" max="99" disabled={!settings.notificationThresholds.enabled} value={settings.notificationThresholds.criticalPercent} onChange={(event) => update("notificationThresholds", { ...settings.notificationThresholds, criticalPercent: Number(event.target.value) })} /><small>%以下</small></span></label><p className="settings-note field--wide">残量が0%になった場合は、上の閾値にかかわらず使い切りとして通知します。</p></div></section>;
+  if (section === "advanced") return <section className="settings-section" aria-labelledby="settings-page-title"><div className="settings-card settings-grid"><label className="field field--wide"><span>Codex実行ファイルのパス</span><input type="text" value={settings.codexPath ?? ""} onChange={(event) => update("codexPath", event.target.value || null)} placeholder="自動検出（推奨）" /><small>空欄の場合はCodexデスクトップ同梱版を自動検出します。</small></label><label className="toggle-field field--wide"><input type="checkbox" checked={settings.forceCompatibilityMode} onChange={(event) => update("forceCompatibilityMode", event.target.checked)} /><span><strong>ローカルログ互換モード</strong><small>App Serverを使えない旧環境だけで有効にします。アプリ内認証は利用できません。</small></span></label></div></section>;
+  return <section className="settings-section" aria-labelledby="settings-page-title"><AppUpdatePanel adapter={props.adapter} appVersion={appVersion} /></section>;
 };
 
 class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> { state: { error: Error | null } = { error: null }; static getDerivedStateFromError(error: Error) { return { error }; } componentDidCatch(error: Error, info: ErrorInfo) { console.error("UsageDock UI error", error, info); } render() { return this.state.error ? <main className="root-error" role="alert"><h1>画面を表示できません</h1><p>{this.state.error.message}</p><button type="button" className="button button--primary" onClick={() => window.location.reload()}>再読み込み</button></main> : this.props.children; } }
