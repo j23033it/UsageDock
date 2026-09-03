@@ -34,8 +34,8 @@ struct BackendState {
 }
 
 impl BackendState {
-    fn save_snapshot(&self, snapshot: &DashboardSnapshot) {
-        let _ = storage::save_json(&self.snapshot_path, snapshot);
+    fn save_snapshot(&self, snapshot: &DashboardSnapshot) -> Result<(), String> {
+        storage::save_snapshot(&self.snapshot_path, snapshot)
     }
     fn save_settings(&self, settings: &AppSettings) -> Result<(), String> {
         storage::save_json(&self.settings_path, settings)
@@ -114,6 +114,18 @@ fn classify(status: &ProviderUsage) -> ProviderStatus {
     }
 }
 
+fn refresh_is_due(
+    last_refresh: Option<chrono::DateTime<chrono::Utc>>,
+    interval_seconds: u64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> bool {
+    last_refresh.is_none_or(|last| {
+        let elapsed = now.signed_duration_since(last);
+        elapsed < chrono::Duration::zero()
+            || elapsed >= chrono::Duration::seconds(interval_seconds as i64)
+    })
+}
+
 fn reached_notification_threshold(
     remaining: f64,
     thresholds: &model::NotificationThresholds,
@@ -189,7 +201,15 @@ async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderI
     let (snapshot, notices) = {
         let mut data = state.data.lock().expect("状態ロック");
         let notices = apply_refresh_result(&mut data, &id, result);
-        state.save_snapshot(&data.snapshot);
+        if let Err(error) = state.save_snapshot(&data.snapshot)
+            && let Some(provider) = data
+                .snapshot
+                .providers
+                .iter_mut()
+                .find(|provider| provider.id == id)
+        {
+            provider.last_error = Some(error);
+        }
         (data.snapshot.clone(), notices)
     };
     for (window, remaining, threshold) in notices {
@@ -525,18 +545,23 @@ pub fn run() {
             }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                let mut last_refresh = None;
                 loop {
                     let Some(state) = handle.try_state::<BackendState>() else {
                         break;
                     };
-                    let _ = refresh_all(&handle, &state).await;
                     let interval = state
                         .data
                         .lock()
                         .expect("状態ロック")
                         .settings
                         .refresh_interval_seconds;
-                    tokio::time::sleep(Duration::from_secs(interval)).await;
+                    let now = chrono::Utc::now();
+                    if refresh_is_due(last_refresh, interval, now) {
+                        last_refresh = Some(now);
+                        let _ = refresh_all(&handle, &state).await;
+                    }
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                 }
             });
             Ok(())
@@ -589,6 +614,27 @@ mod tests {
             classify(&empty_provider(ProviderId::Codex)),
             ProviderStatus::Unavailable
         );
+    }
+
+    #[test]
+    fn 壁時計で更新期限を判定する() {
+        let now = chrono::Utc::now();
+        assert!(refresh_is_due(None, 60, now));
+        assert!(!refresh_is_due(
+            Some(now - chrono::Duration::seconds(59)),
+            60,
+            now
+        ));
+        assert!(refresh_is_due(
+            Some(now - chrono::Duration::hours(8)),
+            60,
+            now
+        ));
+        assert!(refresh_is_due(
+            Some(now + chrono::Duration::minutes(1)),
+            60,
+            now
+        ));
     }
 
     #[test]

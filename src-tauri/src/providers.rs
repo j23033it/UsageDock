@@ -71,51 +71,24 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
             "jsonrpc": "2.0", "id": 3, "method": "account/read",
             "params": { "refreshToken": false }
         });
-        for request in [initialize, initialized, read, account] {
-            stdin
-                .write_all(serde_json::to_string(&request).unwrap().as_bytes())
-                .await
-                .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())?;
-            stdin
-                .write_all(b"\n")
-                .await
-                .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())?;
-            stdin
-                .flush()
-                .await
-                .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())?;
-        }
+        send_request(&mut stdin, &initialize).await?;
         let mut lines = BufReader::new(stdout).lines();
-        let mut answer = None;
-        let mut account_plan = None;
-        let mut account_answered = false;
-        while let Some(line) = lines
-            .next_line()
-            .await
-            .map_err(|_| "Codex App Serverの応答を読めませんでした".to_string())?
-        {
-            let value: Value = match serde_json::from_str(&line) {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            match value.get("id").and_then(Value::as_i64) {
-                Some(2) => answer = Some(value),
-                Some(3) => {
-                    account_plan = parse_codex_plan_name(&value);
-                    account_answered = true;
-                }
-                _ => {}
-            }
-            if answer.is_some() && account_answered {
-                break;
-            }
-        }
-        let _ = child.kill().await;
-        let response = answer
-            .ok_or_else(|| "Codex App Serverから利用状況を取得できませんでした".to_string())?;
+        read_response(&mut lines, 1).await?;
+        send_request(&mut stdin, &initialized).await?;
+        send_request(&mut stdin, &read).await?;
+        let response = read_response(&mut lines, 2).await?;
         let windows = parse_codex_response(&response)
             .ok_or_else(|| "Codexの利用状況形式を認識できませんでした".to_string())?;
-        let plan_name = account_plan.or_else(|| parse_codex_plan_name(&response));
+        let mut plan_name = parse_codex_plan_name(&response);
+        if plan_name.is_none() {
+            send_request(&mut stdin, &account).await?;
+            plan_name = timeout(Duration::from_secs(2), read_response(&mut lines, 3))
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .and_then(|value| parse_codex_plan_name(&value));
+        }
+        let _ = child.kill().await;
         let has_five_hour_limit = Some(
             windows
                 .iter()
@@ -131,6 +104,45 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
     timeout(Duration::from_secs(10), task)
         .await
         .map_err(|_| "Codex App Serverがタイムアウトしました".to_string())?
+}
+
+async fn send_request(
+    stdin: &mut tokio::process::ChildStdin,
+    request: &Value,
+) -> Result<(), String> {
+    let payload = serde_json::to_vec(request)
+        .map_err(|_| "Codex App Serverへの要求を作成できませんでした".to_string())?;
+    stdin
+        .write_all(&payload)
+        .await
+        .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())?;
+    stdin
+        .write_all(b"\n")
+        .await
+        .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())?;
+    stdin
+        .flush()
+        .await
+        .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())
+}
+
+async fn read_response<R: tokio::io::AsyncBufRead + Unpin>(
+    lines: &mut tokio::io::Lines<R>,
+    expected_id: i64,
+) -> Result<Value, String> {
+    while let Some(line) = lines
+        .next_line()
+        .await
+        .map_err(|_| "Codex App Serverの応答を読めませんでした".to_string())?
+    {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if value.get("id").and_then(Value::as_i64) == Some(expected_id) {
+            return Ok(value);
+        }
+    }
+    Err("Codex App Serverが応答を終了しました".to_string())
 }
 
 pub fn parse_codex_plan_name(response: &Value) -> Option<String> {
