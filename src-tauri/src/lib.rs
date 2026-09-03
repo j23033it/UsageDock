@@ -1,9 +1,13 @@
+mod codex;
 mod model;
 mod providers;
 mod storage;
+mod updates;
 
 use model::{
-    AppSettings, DashboardSnapshot, ProviderId, ProviderStatus, ProviderUsage, UsageSource, now_iso,
+    AppSettings, CodexConnection, CodexLoginMode, CodexLoginPrompt, ConnectionOverview,
+    ConnectionStatus, DashboardSnapshot, OpenCodeConnection, ProviderId, ProviderStatus,
+    ProviderUsage, UsageSource, now_iso,
 };
 use providers::{FetchResult, fetch_codex, fetch_opencode};
 use std::{
@@ -17,6 +21,13 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, LogicalSize, Manager, PhysicalPosition, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutoStartManagerExt;
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
+use tokio::sync::oneshot;
+
+struct PendingCodexLogin {
+    prompt: CodexLoginPrompt,
+    cancel: Option<oneshot::Sender<()>>,
+}
 
 struct BackendData {
     settings: AppSettings,
@@ -24,6 +35,9 @@ struct BackendData {
     refreshing: HashSet<ProviderId>,
     notified: HashSet<(ProviderId, model::WindowKind, u8)>,
     widget_expanded: bool,
+    codex_auth_starting: bool,
+    pending_codex_login: Option<PendingCodexLogin>,
+    last_codex_auth_error: Option<String>,
 }
 
 #[derive(Clone)]
@@ -31,6 +45,7 @@ struct BackendState {
     data: Arc<Mutex<BackendData>>,
     settings_path: PathBuf,
     snapshot_path: PathBuf,
+    codex_home: PathBuf,
 }
 
 impl BackendState {
@@ -192,7 +207,7 @@ async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderI
         data.settings.clone()
     };
     let result = match id.clone() {
-        ProviderId::Codex => fetch_codex(&settings).await,
+        ProviderId::Codex => fetch_codex(&settings, &state.codex_home).await,
         ProviderId::OpenCodeGo => match storage::read_opencode_key() {
             Some(key) => fetch_opencode(key).await,
             None => Err("OpenCode GoのAPIキーが設定されていません".into()),
@@ -382,6 +397,222 @@ async fn get_settings(state: tauri::State<'_, BackendState>) -> Result<AppSettin
 }
 
 #[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<model::AppUpdate, String> {
+    updates::check(&app).await
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    updates::install(&app).await
+}
+
+async fn connection_overview(state: &BackendState) -> ConnectionOverview {
+    let (settings, pending, starting, last_error) = {
+        let data = state.data.lock().expect("状態ロック");
+        (
+            data.settings.clone(),
+            data.pending_codex_login
+                .as_ref()
+                .map(|pending| pending.prompt.clone()),
+            data.codex_auth_starting,
+            data.last_codex_auth_error.clone(),
+        )
+    };
+    let codex = if starting || pending.is_some() {
+        CodexConnection {
+            status: ConnectionStatus::Connecting,
+            auth_type: None,
+            email: None,
+            plan_name: None,
+            executable_path: codex::resolve_executable(settings.codex_path.as_deref())
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned()),
+            pending_login: pending,
+            error: None,
+        }
+    } else {
+        match codex::read_connection(settings.codex_path.as_deref(), &state.codex_home).await {
+            Ok(mut connection) => {
+                if connection.error.is_none() {
+                    connection.error = last_error;
+                }
+                connection
+            }
+            Err(error) => CodexConnection {
+                status: ConnectionStatus::Error,
+                auth_type: None,
+                email: None,
+                plan_name: None,
+                executable_path: codex::resolve_executable(settings.codex_path.as_deref())
+                    .ok()
+                    .map(|path| path.to_string_lossy().into_owned()),
+                pending_login: None,
+                error: Some(error),
+            },
+        }
+    };
+    ConnectionOverview {
+        codex,
+        open_code_go: OpenCodeConnection {
+            status: if storage::read_opencode_key().is_some() {
+                ConnectionStatus::Connected
+            } else {
+                ConnectionStatus::Disconnected
+            },
+        },
+    }
+}
+
+async fn emit_connections(app: &tauri::AppHandle, state: &BackendState) {
+    let overview = connection_overview(state).await;
+    let _ = app.emit("connections-updated", overview);
+}
+
+#[tauri::command]
+async fn get_connections(
+    state: tauri::State<'_, BackendState>,
+) -> Result<ConnectionOverview, String> {
+    Ok(connection_overview(&state).await)
+}
+
+#[tauri::command]
+async fn start_codex_login(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendState>,
+    mode: CodexLoginMode,
+) -> Result<CodexLoginPrompt, String> {
+    let settings = {
+        let mut data = state.data.lock().expect("状態ロック");
+        if let Some(pending) = &data.pending_codex_login {
+            return Ok(pending.prompt.clone());
+        }
+        if data.codex_auth_starting {
+            return Err("Codex認証を開始しています".into());
+        }
+        data.codex_auth_starting = true;
+        data.last_codex_auth_error = None;
+        data.settings.clone()
+    };
+    let session = codex::begin_login(settings.codex_path.as_deref(), &state.codex_home, mode).await;
+    {
+        state.data.lock().expect("状態ロック").codex_auth_starting = false;
+    }
+    let session = session?;
+    let prompt = session.prompt.clone();
+    app.opener()
+        .open_url(&prompt.verification_url, None::<&str>)
+        .map_err(|_| "認証ページをブラウザーで開けませんでした".to_string())?;
+    let (cancel, cancel_receiver) = oneshot::channel();
+    {
+        state.data.lock().expect("状態ロック").pending_codex_login = Some(PendingCodexLogin {
+            prompt: prompt.clone(),
+            cancel: Some(cancel),
+        });
+    }
+    let background_state = (*state).clone();
+    let background_app = app.clone();
+    let login_id = prompt.login_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = session.wait(cancel_receiver).await;
+        {
+            let mut data = background_state.data.lock().expect("状態ロック");
+            if data
+                .pending_codex_login
+                .as_ref()
+                .is_some_and(|pending| pending.prompt.login_id == login_id)
+            {
+                data.pending_codex_login = None;
+            }
+            data.last_codex_auth_error = result
+                .as_ref()
+                .err()
+                .filter(|error| !codex::was_cancelled(error))
+                .cloned();
+        }
+        if result.is_ok() {
+            refresh_one(&background_app, &background_state, ProviderId::Codex).await;
+        }
+        emit_connections(&background_app, &background_state).await;
+    });
+    emit_connections(&app, &state).await;
+    Ok(prompt)
+}
+
+#[tauri::command]
+async fn cancel_codex_login(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendState>,
+) -> Result<(), String> {
+    let cancel = {
+        let mut data = state.data.lock().expect("状態ロック");
+        let cancel = data
+            .pending_codex_login
+            .as_mut()
+            .and_then(|pending| pending.cancel.take());
+        data.pending_codex_login = None;
+        cancel
+    };
+    if let Some(cancel) = cancel {
+        let _ = cancel.send(());
+    }
+    emit_connections(&app, &state).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_codex_api_key(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendState>,
+    api_key: String,
+) -> Result<(), String> {
+    let settings = {
+        let data = state.data.lock().expect("状態ロック");
+        if data.pending_codex_login.is_some() || data.codex_auth_starting {
+            return Err("進行中のCodex認証を先にキャンセルしてください".into());
+        }
+        data.settings.clone()
+    };
+    codex::login_api_key(settings.codex_path.as_deref(), &state.codex_home, api_key).await?;
+    state.data.lock().expect("状態ロック").last_codex_auth_error = None;
+    refresh_one(&app, &state, ProviderId::Codex).await;
+    emit_connections(&app, &state).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn disconnect_codex(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendState>,
+) -> Result<(), String> {
+    let settings = {
+        let data = state.data.lock().expect("状態ロック");
+        if data.pending_codex_login.is_some() || data.codex_auth_starting {
+            return Err("進行中のCodex認証を先にキャンセルしてください".into());
+        }
+        data.settings.clone()
+    };
+    codex::logout(settings.codex_path.as_deref(), &state.codex_home).await?;
+    let snapshot = {
+        let mut data = state.data.lock().expect("状態ロック");
+        data.last_codex_auth_error = None;
+        if let Some(provider) = data
+            .snapshot
+            .providers
+            .iter_mut()
+            .find(|provider| provider.id == ProviderId::Codex)
+        {
+            *provider = empty_provider(ProviderId::Codex);
+        }
+        let snapshot = data.snapshot.clone();
+        state.save_snapshot(&snapshot)?;
+        snapshot
+    };
+    let _ = app.emit("usage-updated", snapshot);
+    emit_connections(&app, &state).await;
+    Ok(())
+}
+
+#[tauri::command]
 async fn save_settings(
     app: tauri::AppHandle,
     state: tauri::State<'_, BackendState>,
@@ -411,18 +642,45 @@ async fn save_settings(
 }
 
 #[tauri::command]
-async fn set_opencode_api_key(api_key: String) -> Result<(), String> {
+async fn set_opencode_api_key(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendState>,
+    api_key: String,
+) -> Result<(), String> {
     if api_key.trim().is_empty() {
         return Err("APIキーを入力してください".into());
     }
     let api_key = api_key.trim().to_string();
     fetch_opencode(api_key.clone()).await?;
-    storage::save_opencode_key(&api_key)
+    storage::save_opencode_key(&api_key)?;
+    refresh_one(&app, &state, ProviderId::OpenCodeGo).await;
+    emit_connections(&app, &state).await;
+    Ok(())
 }
 
 #[tauri::command]
-async fn disconnect_opencode() -> Result<(), String> {
-    storage::delete_opencode_key()
+async fn disconnect_opencode(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendState>,
+) -> Result<(), String> {
+    storage::delete_opencode_key()?;
+    let snapshot = {
+        let mut data = state.data.lock().expect("状態ロック");
+        if let Some(provider) = data
+            .snapshot
+            .providers
+            .iter_mut()
+            .find(|provider| provider.id == ProviderId::OpenCodeGo)
+        {
+            *provider = empty_provider(ProviderId::OpenCodeGo);
+        }
+        let snapshot = data.snapshot.clone();
+        state.save_snapshot(&snapshot)?;
+        snapshot
+    };
+    let _ = app.emit("usage-updated", snapshot);
+    emit_connections(&app, &state).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -479,6 +737,12 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .pubkey(updates::PUBLIC_KEY)
+                .build(),
+        )
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -491,9 +755,13 @@ pub fn run() {
                     refreshing: HashSet::new(),
                     notified: HashSet::new(),
                     widget_expanded: false,
+                    codex_auth_starting: false,
+                    pending_codex_login: None,
+                    last_codex_auth_error: None,
                 })),
                 settings_path: config_dir.join("settings.json"),
                 snapshot_path: config_dir.join("snapshot.json"),
+                codex_home: config_dir.join("codex"),
             };
             app.manage(state);
             let settings = app
@@ -579,6 +847,13 @@ pub fn run() {
             refresh_usage,
             get_settings,
             save_settings,
+            check_for_update,
+            install_update,
+            get_connections,
+            start_codex_login,
+            cancel_codex_login,
+            set_codex_api_key,
+            disconnect_codex,
             set_opencode_api_key,
             disconnect_opencode,
             open_settings,
@@ -661,6 +936,9 @@ mod tests {
             refreshing: HashSet::from([ProviderId::Codex]),
             notified: HashSet::new(),
             widget_expanded: false,
+            codex_auth_starting: false,
+            pending_codex_login: None,
+            last_codex_auth_error: None,
         };
         let result = FetchResult {
             source: UsageSource::AppServer,

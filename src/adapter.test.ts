@@ -26,4 +26,27 @@ describe("ブラウザ用mock adapter", () => {
     await adapter.saveSettings(settings);
     expect((await adapter.getSettings()).widgetSize).toBe("l");
   });
+
+  it("Codex認証の開始とキャンセルを接続状態へ通知する", async () => {
+    const adapter = createMockAdapter();
+    const statuses: string[] = [];
+    const cleanup = adapter.onConnectionsUpdated((connections) => statuses.push(connections.codex.status));
+
+    const prompt = await adapter.startCodexLogin("device-code");
+    expect(prompt.userCode).toBe("ABCD-1234");
+    expect((await adapter.getConnections()).codex.status).toBe("connecting");
+    await adapter.cancelCodexLogin();
+    expect(statuses).toEqual(["connecting", "disconnected"]);
+    cleanup();
+  });
+
+  it("OpenCode Goのキー有無だけを公開する", async () => {
+    const adapter = createMockAdapter();
+    await adapter.disconnectOpencode();
+    expect((await adapter.getConnections()).openCodeGo.status).toBe("disconnected");
+    await adapter.setOpencodeApiKey("secret-that-must-not-be-returned");
+    expect(await adapter.getConnections()).toEqual(expect.objectContaining({
+      openCodeGo: { status: "connected" },
+    }));
+  });
 });

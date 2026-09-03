@@ -17,15 +17,17 @@ CodexとOpenCode Goの利用可能な残量を、Windows 11の画面端でいつ
 - 残量20%・10%・0%を初期値とするWindows通知
 - 更新間隔、サイズ、表示倍率、不透明度、プロバイダーの表示順を設定可能
 - Windowsログイン時の自動起動、システムトレイからの更新・設定・終了に対応
+- アプリ内でCodex / OpenCode Goの認証を追加・更新・解除
+- 署名付き更新の確認とワンクリックインストール
 
 ## 対応プロバイダー
 
 | プロバイダー | 取得方法 | 利用前の準備 |
 | --- | --- | --- |
-| Codex | Codex App Server。利用できない場合はローカルのセッションログへフォールバック | Codex CLIをインストールし、ChatGPTアカウントでログインする |
+| Codex | Codex App Server | 設定画面からChatGPT認証またはOpenAI APIキーを追加する |
 | OpenCode Go | OpenCode Go Usage API | 設定画面でAPIキーを登録する |
 
-OpenCode GoのAPIキーはWindows Credential Managerに保存します。設定JSON、スナップショット、React側のWebViewには保存・返却しません。
+CodexのChatGPT認証は公式App Serverに任せ、資格情報はWindows Credential Managerへ保存します。UsageDockはトークンを読み取りません。OpenCode GoのAPIキーもWindows Credential Managerに保存し、設定JSON、スナップショット、React側のWebViewには保存・返却しません。
 
 ## 使い方
 
@@ -44,7 +46,7 @@ OpenCode GoのAPIキーはWindows Credential Managerに保存します。設定J
 | 更新アイコン | すべての残量を今すぐ取得する |
 | 設定アイコン | 設定画面を開く |
 
-設定画面では、更新間隔、ウィジェットの見た目、自動起動、通知閾値、プロバイダーの有効化と並べ替えを変更できます。OpenCode Goを使う場合も、ここでAPIキーを登録します。
+設定画面では、更新間隔、ウィジェットの見た目、自動起動、通知閾値、プロバイダーの有効化と並べ替えを変更できます。「プロバイダー」ではCodexのブラウザー認証・認証コード・APIキーと、OpenCode GoのAPIキーを追加、更新、解除できます。
 
 ### 終了する
 
@@ -52,7 +54,7 @@ OpenCode GoのAPIキーはWindows Credential Managerに保存します。設定J
 
 ### 更新する
 
-`release\UsageDock-x64-setup.exe` を実行します。インストーラーは起動中のUsageDockを確認して終了させてから更新するため、実行ファイルを手作業で上書きしないでください。保存済みの設定とAPIキーは引き継がれ、古いバージョンへの上書きは拒否されます。旧WinForms版の `CodexBar.exe` は使用しません。
+設定画面の「アプリ情報」で「更新を確認」を押します。新しい署名済みバージョンがあれば、そのままダウンロードしてインストールできます。Windowsではインストール開始時にUsageDockが終了し、設定と資格情報は更新後も引き継がれます。初回導入だけは `release\UsageDock-x64-setup.exe` を使用します。
 
 ## ローカルでビルドする
 
@@ -62,7 +64,7 @@ OpenCode GoのAPIキーはWindows Credential Managerに保存します。設定J
 - Node.jsとnpm
 - Rustツールチェーン
 - Tauri v2のWindows向け開発環境（Microsoft C++ Build Tools、WebView2を含む）
-- Codexの残量を表示する場合は、ログイン済みのCodex CLI
+- Codexデスクトップアプリ、またはApp Server対応のCodex CLI
 
 ### セットアップ
 
@@ -94,20 +96,28 @@ npm run check
 
 ```powershell
 $releaseVersion = Read-Host '新しいバージョン（例: 1.2.3）'
-npm run release -- $releaseVersion
+npm run release -- $releaseVersion -GitHubRepository j23033it/UsageDock-Releases
 ```
 
-リリース前に、機能変更と検証をコミットして作業ツリーをクリーンにします。引数には現在より大きい配布バージョンを指定してください。
+リリース前に、機能変更と検証をコミットして作業ツリーをクリーンにします。引数には現在より大きい配布バージョンと、配布に使うGitHubリポジトリの `owner/repository` を指定してください。
 
 アプリのバージョンは `src-tauri\Cargo.toml` だけを編集元とし、`tauri.conf.json` はその値を自動的に使用します。機能追加のたびには採番せず、配布するときだけリリースコマンドで更新します。
 
-リリースコマンドは一時フォルダーで検証とNSISビルドを行い、生成物を `release\UsageDock-x64-setup.exe` の1本へ集約します。`release\release.json` には配布バージョンとSHA-256を記録します。一時ビルドは完了時に削除されるため、`src-tauri\target` に過去バージョンの実行ファイルやインストーラーを積み上げません。
+リリースコマンドは一時フォルダーで検証とNSISビルドを行い、通常インストールとアプリ内更新を兼ねる署名付きセットアップEXE、署名、`latest.json` を `release` へ固定名で集約します。ビルド失敗時はバージョン変更を自動で戻し、一時ビルドも削除するため、`src-tauri\target` に過去版を積み上げません。
+
+更新パッケージは `%USERPROFILE%\.tauri\usagedock.key` の秘密鍵で署名します。この鍵はリポジトリ外で安全に保管し、紛失しないでください。別の開発環境では次のコマンドで一度だけ生成します。
+
+```powershell
+npm run tauri signer generate -- --ci --write-keys "$env:USERPROFILE\.tauri\usagedock.key"
+```
+
+[UsageDock-Releases](https://github.com/j23033it/UsageDock-Releases) のGitHub Release `v<version>` へ `UsageDock-x64-setup.exe`、同名の `.sig`、`latest.json` を配置すると、アプリの更新ボタンから取得できます。更新専用リポジトリへソースコードや配布物の履歴はコミットしません。
 
 成功後は変更された `src-tauri\Cargo.toml` と `src-tauri\Cargo.lock` を確認してコミットし、配布版と同じ番号のローカルGitタグを付けます。過去版はGitで追跡し、ローカルに複数のインストーラーを保管しません。
 
 ## データ取得と状態表示
 
-Codexは、まずローカルのCodex App Serverへ問い合わせます。起動できない場合や応答を解釈できない場合に限り、`%USERPROFILE%\.codex\sessions` の直近のセッションログから利用状況を探します。互換モードを有効にすると、最初からローカルログを使用します。
+Codexは、Codexデスクトップアプリに同梱された新しい実行ファイルを優先してApp Serverへ問い合わせます。UsageDock専用の `CODEX_HOME` を使うため、個人用の古い `config.toml` は読み込みません。互換モードを明示的に有効にした場合だけ、`%USERPROFILE%\.codex\sessions` の直近ログを使用します。
 
 OpenCode Goは `https://opencode.ai/zen/go/v1/usage` へBearer認証で問い合わせます。取得処理はいずれもRust側で行い、秘密情報をUI側へ渡しません。
 
@@ -131,10 +141,12 @@ OpenCode Goは `https://opencode.ai/zen/go/v1/usage` へBearer認証で問い合
 │  └─ assets/providers/  # プロバイダーのアイコン
 ├─ src-tauri/            # RustバックエンドとTauri設定
 │  └─ src/
+│     ├─ codex.rs        # Codex実行環境、認証、App Server接続
 │     ├─ lib.rs          # ウィンドウ、トレイ、更新処理
 │     ├─ model.rs        # 設定・利用状況のデータモデル
 │     ├─ providers.rs    # Codex / OpenCode Goの取得処理
-│     └─ storage.rs      # 設定、スナップショット、資格情報の保存
+│     ├─ storage.rs      # 設定、スナップショット、資格情報の保存
+│     └─ updates.rs      # 署名付きアプリ更新
 ├─ package.json          # フロントエンドの依存関係とコマンド
 └─ vite.config.ts        # Vite設定
 ```

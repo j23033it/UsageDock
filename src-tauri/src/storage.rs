@@ -7,7 +7,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SNAPSHOT_CACHE_VERSION: u32 = 1;
+// 認証元をUsageDock専用のCodex設定へ切り替えたため、旧キャッシュは引き継がない。
+const SNAPSHOT_CACHE_VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -172,6 +173,20 @@ mod tests {
             r#"{"providers":[],"refreshedAt":"2026-01-01T00:00:00Z"}"#,
         )
         .expect("旧形式作成");
+
+        assert!(load_snapshot(&path).is_none());
+        fs::remove_dir_all(path.parent().expect("親フォルダー")).expect("テストフォルダー削除");
+    }
+
+    #[test]
+    fn 旧認証元のスナップショットを再利用しない() {
+        let path = test_path("previous-auth-source");
+        fs::create_dir_all(path.parent().expect("親フォルダー")).expect("テストフォルダー作成");
+        fs::write(
+            &path,
+            r#"{"cacheVersion":1,"snapshot":{"providers":[],"refreshedAt":"2026-01-01T00:00:00Z"}}"#,
+        )
+        .expect("旧キャッシュ作成");
 
         assert!(load_snapshot(&path).is_none());
         fs::remove_dir_all(path.parent().expect("親フォルダー")).expect("テストフォルダー削除");

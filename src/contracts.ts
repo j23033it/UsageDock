@@ -4,6 +4,39 @@ export type ProviderStatus = "fresh" | "stale" | "outdated" | "unavailable" | "r
 
 export type UsageSource = "app-server" | "local-log" | "api" | "none";
 
+export type ConnectionStatus = "connected" | "disconnected" | "connecting" | "unavailable" | "error";
+export type CodexAuthType = "chatgpt" | "api-key";
+export type CodexLoginMode = "browser" | "device-code";
+
+export type CodexLoginPrompt = {
+  loginId: string;
+  mode: CodexLoginMode;
+  verificationUrl: string;
+  userCode: string | null;
+};
+
+export type CodexConnection = {
+  status: ConnectionStatus;
+  authType: CodexAuthType | null;
+  email: string | null;
+  planName: string | null;
+  executablePath: string | null;
+  pendingLogin: CodexLoginPrompt | null;
+  error: string | null;
+};
+
+export type ConnectionOverview = {
+  codex: CodexConnection;
+  openCodeGo: { status: ConnectionStatus };
+};
+
+export type AppUpdate = {
+  status: "current" | "available" | "unconfigured";
+  currentVersion: string;
+  availableVersion: string | null;
+  notes: string | null;
+};
+
 export type UsageWindow = {
   kind: string;
   label: string;

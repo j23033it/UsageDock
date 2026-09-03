@@ -1,21 +1,16 @@
-use crate::model::{
-    AppSettings, UsageSource, UsageWindow, WindowKind, clamp_percent, kind_for_duration,
-    unix_seconds_to_iso,
+use crate::{
+    codex::CodexClient,
+    model::{
+        AppSettings, UsageSource, UsageWindow, WindowKind, clamp_percent, kind_for_duration,
+        unix_seconds_to_iso,
+    },
 };
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
-    process::Stdio,
     time::SystemTime,
 };
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::Command,
-    time::{Duration, timeout},
-};
-
-#[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+use tokio::time::{Duration, timeout};
 
 #[derive(Debug, Clone)]
 pub struct FetchResult {
@@ -25,70 +20,36 @@ pub struct FetchResult {
     pub windows: Vec<UsageWindow>,
 }
 
-pub async fn fetch_codex(settings: &AppSettings) -> Result<FetchResult, String> {
+pub async fn fetch_codex(settings: &AppSettings, codex_home: &Path) -> Result<FetchResult, String> {
     if settings.force_compatibility_mode {
         return fetch_codex_log().await;
     }
-    match fetch_codex_app_server(settings).await {
-        Ok(result) => Ok(result),
-        Err(_) => fetch_codex_log().await.map(|mut result| {
-            result.source = UsageSource::LocalLog;
-            result
-        }),
-    }
+    fetch_codex_app_server(settings, codex_home).await
 }
 
-async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, String> {
-    let executable = settings.codex_path.as_deref().unwrap_or("codex");
+async fn fetch_codex_app_server(
+    settings: &AppSettings,
+    codex_home: &Path,
+) -> Result<FetchResult, String> {
     let task = async move {
-        let mut command = Command::new(executable);
-        #[cfg(target_os = "windows")]
-        command.creation_flags(CREATE_NO_WINDOW);
-        let mut child = command
-            .args(["app-server", "--listen", "stdio://"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|_| "Codex App Serverを起動できませんでした".to_string())?;
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "Codex App Serverの入力を開けませんでした".to_string())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "Codex App Serverの出力を開けませんでした".to_string())?;
-        let initialize = json!({
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": { "clientInfo": { "name": "usage_dock", "version": env!("CARGO_PKG_VERSION") }, "capabilities": {} }
-        });
-        let initialized = json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} });
-        let read =
-            json!({ "jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": {} });
-        let account = json!({
-            "jsonrpc": "2.0", "id": 3, "method": "account/read",
-            "params": { "refreshToken": false }
-        });
-        send_request(&mut stdin, &initialize).await?;
-        let mut lines = BufReader::new(stdout).lines();
-        read_response(&mut lines, 1).await?;
-        send_request(&mut stdin, &initialized).await?;
-        send_request(&mut stdin, &read).await?;
-        let response = read_response(&mut lines, 2).await?;
+        let mut client = CodexClient::connect(settings.codex_path.as_deref(), codex_home).await?;
+        let response = client
+            .request(2, "account/rateLimits/read", json!({}))
+            .await?;
         let windows = parse_codex_response(&response)
             .ok_or_else(|| "Codexの利用状況形式を認識できませんでした".to_string())?;
         let mut plan_name = parse_codex_plan_name(&response);
         if plan_name.is_none() {
-            send_request(&mut stdin, &account).await?;
-            plan_name = timeout(Duration::from_secs(2), read_response(&mut lines, 3))
-                .await
-                .ok()
-                .and_then(Result::ok)
-                .and_then(|value| parse_codex_plan_name(&value));
+            plan_name = timeout(
+                Duration::from_secs(2),
+                client.request(3, "account/read", json!({ "refreshToken": false })),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .and_then(|value| parse_codex_plan_name(&value));
         }
-        let _ = child.kill().await;
+        client.kill().await;
         let has_five_hour_limit = Some(
             windows
                 .iter()
@@ -104,45 +65,6 @@ async fn fetch_codex_app_server(settings: &AppSettings) -> Result<FetchResult, S
     timeout(Duration::from_secs(10), task)
         .await
         .map_err(|_| "Codex App Serverがタイムアウトしました".to_string())?
-}
-
-async fn send_request(
-    stdin: &mut tokio::process::ChildStdin,
-    request: &Value,
-) -> Result<(), String> {
-    let payload = serde_json::to_vec(request)
-        .map_err(|_| "Codex App Serverへの要求を作成できませんでした".to_string())?;
-    stdin
-        .write_all(&payload)
-        .await
-        .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())?;
-    stdin
-        .write_all(b"\n")
-        .await
-        .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())?;
-    stdin
-        .flush()
-        .await
-        .map_err(|_| "Codex App Serverへ送信できませんでした".to_string())
-}
-
-async fn read_response<R: tokio::io::AsyncBufRead + Unpin>(
-    lines: &mut tokio::io::Lines<R>,
-    expected_id: i64,
-) -> Result<Value, String> {
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|_| "Codex App Serverの応答を読めませんでした".to_string())?
-    {
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if value.get("id").and_then(Value::as_i64) == Some(expected_id) {
-            return Ok(value);
-        }
-    }
-    Err("Codex App Serverが応答を終了しました".to_string())
 }
 
 pub fn parse_codex_plan_name(response: &Value) -> Option<String> {
@@ -176,7 +98,7 @@ fn find_plan_type(value: &Value) -> Option<&str> {
     None
 }
 
-fn display_plan_name(plan: &str) -> Option<String> {
+pub(crate) fn display_plan_name(plan: &str) -> Option<String> {
     let name = match plan.trim().to_ascii_lowercase().as_str() {
         "free" => "ChatGPT Free",
         "go" => "ChatGPT Go",

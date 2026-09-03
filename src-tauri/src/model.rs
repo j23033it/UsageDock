@@ -1,5 +1,80 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConnectionStatus {
+    Connected,
+    Disconnected,
+    Connecting,
+    Unavailable,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum CodexAuthType {
+    Chatgpt,
+    ApiKey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum CodexLoginMode {
+    Browser,
+    DeviceCode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexLoginPrompt {
+    pub login_id: String,
+    pub mode: CodexLoginMode,
+    pub verification_url: String,
+    pub user_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexConnection {
+    pub status: ConnectionStatus,
+    pub auth_type: Option<CodexAuthType>,
+    pub email: Option<String>,
+    pub plan_name: Option<String>,
+    pub executable_path: Option<String>,
+    pub pending_login: Option<CodexLoginPrompt>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenCodeConnection {
+    pub status: ConnectionStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionOverview {
+    pub codex: CodexConnection,
+    pub open_code_go: OpenCodeConnection,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum UpdateStatus {
+    Current,
+    Available,
+    Unconfigured,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppUpdate {
+    pub status: UpdateStatus,
+    pub current_version: String,
+    pub available_version: Option<String>,
+    pub notes: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum WindowKind {
