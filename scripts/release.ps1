@@ -22,6 +22,31 @@ $updateArtifactUrl = "https://github.com/$GitHubRepository/releases/download/v$V
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $temporaryTarget = [IO.Path]::GetFullPath((Join-Path $temporaryRoot "UsageDock-release-$([guid]::NewGuid())"))
 
+function Invoke-TauriNsisBuild {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $env:ComSpec
+    $startInfo.Arguments = '/d /s /c "npm.cmd run tauri -- build --bundles nsis"'
+    $startInfo.WorkingDirectory = $projectRoot
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw 'Tauriビルドプロセスを開始できませんでした。'
+        }
+        # 空パスワードを先にパイプへ書き、署名ツールが読み取るまで保持します。
+        $process.StandardInput.WriteLine()
+        $process.StandardInput.Close()
+        $process.WaitForExit()
+        return $process.ExitCode
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 if (-not $temporaryTarget.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or $temporaryTarget -eq $temporaryRoot) {
     throw '一時ビルド先を安全に決定できませんでした。'
 }
@@ -84,9 +109,9 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw 'Rustテストに失敗しました。'
         }
-        # Windowsでは空の環境変数が未設定扱いになるため、空パスワードを標準入力へ明示します。
-        '' | npm run tauri build -- --bundles nsis
-        if ($LASTEXITCODE -ne 0) {
+        # Windowsでは空の環境変数が未設定扱いになるため、子プロセスの標準入力へ空行を明示します。
+        $tauriExitCode = Invoke-TauriNsisBuild
+        if ($tauriExitCode -ne 0) {
             throw 'インストーラーの生成に失敗しました。'
         }
 
