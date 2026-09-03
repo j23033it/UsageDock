@@ -1,0 +1,3 @@
+# UsageDock Releases
+
+UsageDockの署名済みWindows更新ファイルだけを配信する公開リポジトリです。ソースコードは含みません。
