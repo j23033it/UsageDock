@@ -93,7 +93,8 @@ npm run check
 ### Windowsインストーラーを生成する
 
 ```powershell
-npm run release -- 0.3.0
+$releaseVersion = Read-Host '新しいバージョン（例: 1.2.3）'
+npm run release -- $releaseVersion
 ```
 
 リリース前に、機能変更と検証をコミットして作業ツリーをクリーンにします。引数には現在より大きい配布バージョンを指定してください。
@@ -102,7 +103,7 @@ npm run release -- 0.3.0
 
 リリースコマンドは一時フォルダーで検証とNSISビルドを行い、生成物を `release\UsageDock-x64-setup.exe` の1本へ集約します。`release\release.json` には配布バージョンとSHA-256を記録します。一時ビルドは完了時に削除されるため、`src-tauri\target` に過去バージョンの実行ファイルやインストーラーを積み上げません。
 
-成功後は変更された `src-tauri\Cargo.toml` と `src-tauri\Cargo.lock` を確認してコミットし、必要なら同じ番号のローカルGitタグを付けます。過去版はGitで追跡し、ローカルに複数のインストーラーを保管しません。
+成功後は変更された `src-tauri\Cargo.toml` と `src-tauri\Cargo.lock` を確認してコミットし、配布版と同じ番号のローカルGitタグを付けます。過去版はGitで追跡し、ローカルに複数のインストーラーを保管しません。
 
 ## データ取得と状態表示
 
