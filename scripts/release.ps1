@@ -147,7 +147,7 @@ try {
         $env:USAGEDOCK_VERIFY_ARTIFACT = $generatedInstaller.FullName
         $env:USAGEDOCK_VERIFY_SIGNATURE = $generatedSignature
         try {
-            cargo test --manifest-path src-tauri/Cargo.toml リリース時に更新成果物の署名を検証する
+            cargo test --manifest-path src-tauri/Cargo.toml --release リリース時に更新成果物の署名を検証する
             if ($LASTEXITCODE -ne 0) {
                 throw '更新成果物の署名検証に失敗しました。'
             }
