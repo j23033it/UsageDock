@@ -22,36 +22,38 @@ $updateArtifactUrl = "https://github.com/$GitHubRepository/releases/download/v$V
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $temporaryTarget = [IO.Path]::GetFullPath((Join-Path $temporaryRoot "UsageDock-release-$([guid]::NewGuid())"))
 
-function Invoke-TauriNsisBuild {
+function Invoke-TauriSigner {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath
+    )
+
+    $node = (Get-Command node.exe -ErrorAction Stop).Source
+    $tauriCli = Join-Path $projectRoot 'node_modules\@tauri-apps\cli\tauri.js'
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $env:ComSpec
-    $startInfo.Arguments = '/d /s /c "npm.cmd run tauri -- build --bundles nsis"'
+    $startInfo.FileName = $node
+    $startInfo.Arguments = "`"$tauriCli`" signer sign --private-key-path `"$signingKey`" --password `"`" `"$FilePath`""
     $startInfo.WorkingDirectory = $projectRoot
     $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
 
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     try {
         if (-not $process.Start()) {
-            throw 'Tauriビルドプロセスを開始できませんでした。'
-        }
-        $passwordSent = $false
-        while ($null -ne ($line = $process.StandardError.ReadLine())) {
-            [Console]::Error.WriteLine($line)
-            if (-not $passwordSent -and $line -match 'updater signing key') {
-                # npmが先に入力を消費しないよう、署名処理の開始を確認してから空パスワードを送ります。
-                $process.StandardInput.WriteLine()
-                $process.StandardInput.Flush()
-                $process.StandardInput.Close()
-                $passwordSent = $true
-            }
-        }
-        if (-not $passwordSent) {
-            $process.StandardInput.Close()
+            throw '更新署名プロセスを開始できませんでした。'
         }
         $process.WaitForExit()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        if ($stdout) {
+            [Console]::Out.WriteLine($stdout.TrimEnd())
+        }
+        if ($stderr) {
+            [Console]::Error.WriteLine($stderr.TrimEnd())
+        }
         return $process.ExitCode
     }
     finally {
@@ -103,10 +105,8 @@ try {
     [IO.File]::WriteAllText($cargoManifest, $updatedManifest, $utf8)
 
     $previousCargoTarget = $env:CARGO_TARGET_DIR
-    $previousSigningKey = $env:TAURI_SIGNING_PRIVATE_KEY
     $previousUpdateEndpoint = $env:USAGEDOCK_UPDATE_ENDPOINT
     $env:CARGO_TARGET_DIR = $temporaryTarget
-    $env:TAURI_SIGNING_PRIVATE_KEY = $signingKey
     $env:USAGEDOCK_UPDATE_ENDPOINT = $updateEndpoint
     try {
         npm run test
@@ -121,9 +121,10 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw 'Rustテストに失敗しました。'
         }
-        # Windowsでは空の環境変数が未設定扱いになるため、子プロセスの標準入力へ空行を明示します。
-        $tauriExitCode = Invoke-TauriNsisBuild
-        if ($tauriExitCode -ne 0) {
+        $bundleConfig = Join-Path $temporaryTarget 'release-config.json'
+        [IO.File]::WriteAllText($bundleConfig, '{"bundle":{"createUpdaterArtifacts":false}}', $utf8)
+        npm run tauri -- build --bundles nsis --config $bundleConfig
+        if ($LASTEXITCODE -ne 0) {
             throw 'インストーラーの生成に失敗しました。'
         }
 
@@ -133,6 +134,11 @@ try {
         }
         $generatedInstaller = $generatedInstallers[0]
         $generatedSignature = $generatedInstaller.FullName + '.sig'
+        # 空パスワードはWindowsの環境変数では未設定扱いになるため、CLI引数として明示します。
+        $signerExitCode = Invoke-TauriSigner -FilePath $generatedInstaller.FullName
+        if ($signerExitCode -ne 0) {
+            throw 'インストーラーの更新署名に失敗しました。'
+        }
         if (-not (Test-Path -LiteralPath $generatedSignature -PathType Leaf)) {
             throw 'インストーラーの更新署名が見つかりませんでした。'
         }
@@ -184,12 +190,6 @@ try {
         }
         else {
             $env:CARGO_TARGET_DIR = $previousCargoTarget
-        }
-        if ($null -eq $previousSigningKey) {
-            Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
-        }
-        else {
-            $env:TAURI_SIGNING_PRIVATE_KEY = $previousSigningKey
         }
         if ($null -eq $previousUpdateEndpoint) {
             Remove-Item Env:USAGEDOCK_UPDATE_ENDPOINT -ErrorAction SilentlyContinue
