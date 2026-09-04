@@ -29,6 +29,7 @@ function Invoke-TauriNsisBuild {
     $startInfo.WorkingDirectory = $projectRoot
     $startInfo.UseShellExecute = $false
     $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardError = $true
 
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
@@ -36,9 +37,20 @@ function Invoke-TauriNsisBuild {
         if (-not $process.Start()) {
             throw 'Tauriビルドプロセスを開始できませんでした。'
         }
-        # 空パスワードを先にパイプへ書き、署名ツールが読み取るまで保持します。
-        $process.StandardInput.WriteLine()
-        $process.StandardInput.Close()
+        $passwordSent = $false
+        while ($null -ne ($line = $process.StandardError.ReadLine())) {
+            [Console]::Error.WriteLine($line)
+            if (-not $passwordSent -and $line -match 'updater signing key') {
+                # npmが先に入力を消費しないよう、署名処理の開始を確認してから空パスワードを送ります。
+                $process.StandardInput.WriteLine()
+                $process.StandardInput.Flush()
+                $process.StandardInput.Close()
+                $passwordSent = $true
+            }
+        }
+        if (-not $passwordSent) {
+            $process.StandardInput.Close()
+        }
         $process.WaitForExit()
         return $process.ExitCode
     }
