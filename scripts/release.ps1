@@ -142,6 +142,30 @@ try {
         if (-not (Test-Path -LiteralPath $generatedSignature -PathType Leaf)) {
             throw 'インストーラーの更新署名が見つかりませんでした。'
         }
+        $previousVerifyArtifact = $env:USAGEDOCK_VERIFY_ARTIFACT
+        $previousVerifySignature = $env:USAGEDOCK_VERIFY_SIGNATURE
+        $env:USAGEDOCK_VERIFY_ARTIFACT = $generatedInstaller.FullName
+        $env:USAGEDOCK_VERIFY_SIGNATURE = $generatedSignature
+        try {
+            cargo test --manifest-path src-tauri/Cargo.toml リリース時に更新成果物の署名を検証する
+            if ($LASTEXITCODE -ne 0) {
+                throw '更新成果物の署名検証に失敗しました。'
+            }
+        }
+        finally {
+            if ($null -eq $previousVerifyArtifact) {
+                Remove-Item Env:USAGEDOCK_VERIFY_ARTIFACT -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:USAGEDOCK_VERIFY_ARTIFACT = $previousVerifyArtifact
+            }
+            if ($null -eq $previousVerifySignature) {
+                Remove-Item Env:USAGEDOCK_VERIFY_SIGNATURE -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:USAGEDOCK_VERIFY_SIGNATURE = $previousVerifySignature
+            }
+        }
 
         New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
         Copy-Item -LiteralPath $generatedInstaller.FullName -Destination $releaseInstaller -Force

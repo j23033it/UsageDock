@@ -4825,8 +4825,10 @@ dependencies = [
 name = "usage-dock"
 version = "0.4.2"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "keyring",
+ "minisign-verify",
  "reqwest",
  "serde",
  "serde_json",

@@ -13,6 +13,12 @@ const ProviderMark = ({ provider, size = 20 }: IconProps & { provider: ProviderU
 const RefreshGlyph = ({ size = 16 }: IconProps) => <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8.3A7.5 7.5 0 1 0 19.2 15M19 4.5v4.8h-4.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 const SettingsGlyph = ({ size = 16 }: IconProps) => <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.1 2.6 2.8.8 2.6-1.2 1.7 1.7-1.2 2.6.8 2.8L22.4 13v2l-2.6 1.1-.8 2.8 1.2 2.6-1.7 1.7-2.6-1.2-2.8.8L12 23l-2.1-2.2-2.8-.8-2.6 1.2-1.7-1.7L4 16.1 3.2 13 1 12V10l2.2-1.1L4 6.1 2.8 3.5 4.5 1.8l2.6 1.2L10 2.2 12 0" transform="scale(.9) translate(1.3 1.3)" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>;
 const statusIcon = (status: ProviderUsage["status"]) => status === "fresh" ? "●" : status === "refreshing" ? "↻" : "!";
+export const messageFromError = (caught: unknown, fallback: string) => {
+  if (caught instanceof Error && caught.message.trim()) return caught.message;
+  if (typeof caught === "string" && caught.trim()) return caught;
+  if (caught && typeof caught === "object" && "message" in caught && typeof caught.message === "string" && caught.message.trim()) return caught.message;
+  return fallback;
+};
 const planSummary = (provider: ProviderUsage) => {
   if (provider.id !== "codex") return null;
   const window = provider.hasFiveHourLimit === true ? "5時間枠あり" : provider.hasFiveHourLimit === false ? "5時間枠なし" : "5時間枠未取得";
@@ -48,7 +54,7 @@ const WidgetApp = ({ adapter }: { adapter: AppAdapter }) => {
   const lastExpanded = useRef<boolean | undefined>(undefined);
   const notifyExpanded = useCallback((expanded: boolean) => { if (lastExpanded.current === expanded) return; lastExpanded.current = expanded; void adapter.setWidgetExpanded(expanded); }, [adapter]);
   const close = useCallback(() => { setExpandedProviderId(null); setPinned(false); notifyExpanded(false); }, [notifyExpanded]);
-  const load = useCallback(async () => { try { setError(null); setSnapshot(await adapter.getDashboard()); } catch (caught) { setError(caught instanceof Error ? caught.message : "使用量を取得できませんでした。"); } }, [adapter]);
+  const load = useCallback(async () => { try { setError(null); setSnapshot(await adapter.getDashboard()); } catch (caught) { setError(messageFromError(caught, "使用量を取得できませんでした。")); } }, [adapter]);
   useEffect(() => { void load(); void adapter.getSettings().then((value) => setSettings(settingsWithDefaults(value))); const cleanupUsage = adapter.onUsageUpdated(setSnapshot); const cleanupSettings = adapter.onSettingsUpdated((value) => setSettings(settingsWithDefaults(value))); const clock = window.setInterval(() => setNow(new Date()), 30_000); return () => { cleanupUsage(); cleanupSettings(); window.clearInterval(clock); window.clearTimeout(closeTimer.current); window.clearTimeout(openTimer.current); }; }, [adapter, load]);
   useEffect(() => { const handleWindowKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); }; window.addEventListener("keydown", handleWindowKeyDown); return () => window.removeEventListener("keydown", handleWindowKeyDown); }, [close]);
   const providers = snapshot?.providers ?? [];
@@ -89,7 +95,7 @@ const SettingsApp = ({ adapter }: { adapter: AppAdapter }) => {
   const [openCodeApiKey, setOpenCodeApiKey] = useState("");
   const [connectionTask, setConnectionTask] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState<"codex" | "opencode" | null>(null);
-  useEffect(() => { let active = true; void adapter.getSettings().then((value) => { if (active) { const normalized = settingsWithDefaults(value); setSettings(normalized); setSavedSettings(normalized); setStatus("idle"); } }).catch((caught) => { if (active) { setStatus("error"); setSaveMessage({ tone: "error", text: caught instanceof Error ? caught.message : "設定を読み込めませんでした。" }); } }); return () => { active = false; }; }, [adapter]);
+  useEffect(() => { let active = true; void adapter.getSettings().then((value) => { if (active) { const normalized = settingsWithDefaults(value); setSettings(normalized); setSavedSettings(normalized); setStatus("idle"); } }).catch((caught) => { if (active) { setStatus("error"); setSaveMessage({ tone: "error", text: messageFromError(caught, "設定を読み込めませんでした。") }); } }); return () => { active = false; }; }, [adapter]);
   useEffect(() => { let active = true; void adapter.getAppVersion().then((version) => { if (active) setAppVersion(version); }).catch(() => { if (active) setAppVersion("不明"); }); return () => { active = false; }; }, [adapter]);
   useEffect(() => {
     let active = true;
@@ -97,7 +103,7 @@ const SettingsApp = ({ adapter }: { adapter: AppAdapter }) => {
       .then((value) => { if (active) setConnections(value); })
       .catch((caught) => {
         if (active) {
-          setConnectionMessage({ tone: "error", text: caught instanceof Error ? caught.message : "接続状態を読み込めませんでした。" });
+          setConnectionMessage({ tone: "error", text: messageFromError(caught, "接続状態を読み込めませんでした。") });
         }
       });
     const cleanup = adapter.onConnectionsUpdated((value) => { if (active) setConnections(value); });
@@ -122,7 +128,7 @@ const SettingsApp = ({ adapter }: { adapter: AppAdapter }) => {
       setSaveMessage({ tone: "success", text: "変更を保存しました。" });
     } catch (caught) {
       setStatus("error");
-      setSaveMessage({ tone: "error", text: caught instanceof Error ? caught.message : "設定を保存できませんでした。" });
+      setSaveMessage({ tone: "error", text: messageFromError(caught, "設定を保存できませんでした。") });
     }
   };
   const runConnectionTask = async (task: string, action: () => Promise<void>, successMessage: string) => {
@@ -135,7 +141,7 @@ const SettingsApp = ({ adapter }: { adapter: AppAdapter }) => {
       setConnectionMessage({ tone: "success", text: successMessage });
       setConnections(await adapter.getConnections());
     } catch (caught) {
-      setConnectionMessage({ tone: "error", text: caught instanceof Error ? caught.message : "アカウント操作を完了できませんでした。" });
+      setConnectionMessage({ tone: "error", text: messageFromError(caught, "アカウント操作を完了できませんでした。") });
     } finally {
       setConnectionTask(null);
     }
@@ -255,7 +261,7 @@ const AppUpdatePanel = ({ adapter, appVersion }: { adapter: AppAdapter; appVersi
       setUpdate(await adapter.checkForUpdate());
       setUpdateState("idle");
     } catch (caught) {
-      setUpdateError(caught instanceof Error ? caught.message : "更新情報を確認できませんでした。");
+      setUpdateError(messageFromError(caught, "更新情報を確認できませんでした。"));
       setUpdateState("error");
     }
   };
@@ -267,7 +273,7 @@ const AppUpdatePanel = ({ adapter, appVersion }: { adapter: AppAdapter; appVersi
       await adapter.installUpdate();
       setUpdateState("idle");
     } catch (caught) {
-      setUpdateError(caught instanceof Error ? caught.message : "更新をインストールできませんでした。");
+      setUpdateError(messageFromError(caught, "更新をインストールできませんでした。"));
       setUpdateState("error");
     }
   };
@@ -288,8 +294,8 @@ const AppUpdatePanel = ({ adapter, appVersion }: { adapter: AppAdapter; appVersi
     <div className="update-card__footer">
       <p>設定と認証情報は更新後も保持されます。</p>
       {update?.status === "available"
-        ? <button type="button" className="button button--primary" disabled={updateState === "installing"} onClick={() => void install()}>{updateState === "installing" ? "更新を準備中…" : "更新して再起動"}</button>
-        : <button type="button" className="button button--secondary" disabled={updateState === "checking"} onClick={() => void check()}>{updateState === "checking" ? "確認中…" : "更新を確認"}</button>}
+        ? <button type="button" className="button button--primary" disabled={updateState === "installing"} aria-busy={updateState === "installing"} onClick={() => void install()}>{updateState === "installing" ? "更新を準備中…" : updateState === "error" ? "更新を再試行" : "更新して再起動"}</button>
+        : <button type="button" className="button button--secondary" disabled={updateState === "checking"} aria-busy={updateState === "checking"} onClick={() => void check()}>{updateState === "checking" ? "確認中…" : updateState === "error" ? "確認を再試行" : "更新を確認"}</button>}
     </div>
     {updateError && <p className="inline-error" role="alert">{updateError}</p>}
   </section>;
