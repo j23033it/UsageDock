@@ -121,8 +121,18 @@ pub fn parse_codex_response(response: &Value) -> Option<Vec<UsageWindow>> {
         .and_then(Value::as_object)
         .filter(|map| !map.is_empty())
     {
-        for (id, item) in map {
-            if !is_spark_limit(id, item) {
+        let standard_limits = map
+            .iter()
+            .filter(|(id, item)| is_standard_codex_limit(id, item))
+            .collect::<Vec<_>>();
+        if standard_limits.is_empty() {
+            for (id, item) in map {
+                if !is_spark_limit(id, item) {
+                    collect_limit_objects(item, Some(id.clone()), &mut limits);
+                }
+            }
+        } else {
+            for (id, item) in standard_limits {
                 collect_limit_objects(item, Some(id.clone()), &mut limits);
             }
         }
@@ -141,6 +151,15 @@ pub fn parse_codex_response(response: &Value) -> Option<Vec<UsageWindow>> {
         }
     }
     (!windows.is_empty()).then_some(windows)
+}
+
+fn is_standard_codex_limit(id: &str, value: &Value) -> bool {
+    id.eq_ignore_ascii_case("codex")
+        || value
+            .as_object()
+            .and_then(|object| object.get("limitId").or_else(|| object.get("limit_id")))
+            .and_then(Value::as_str)
+            .is_some_and(|value| value.eq_ignore_ascii_case("codex"))
 }
 
 fn is_spark_limit(id: &str, value: &Value) -> bool {
@@ -432,15 +451,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn codex応答を複数枠へ変換する() {
+    fn codex応答から標準利用枠だけを変換する() {
         let value = serde_json::json!({"result":{"rateLimits":{"planType":"pro","primary":{"usedPercent":99,"windowDurationMins":300}},"rateLimitsByLimitId":{"codex":{"planType":"pro","primary":{"usedPercent":120,"windowDurationMins":300,"resetsAt":1700000000},"secondary":{"usedPercent":10,"windowDurationMins":10080}},"codex_bengalfox":{"limitName":"GPT-5.3-Codex-Spark","planType":"pro","primary":{"usedPercent":60,"windowDurationMins":300},"secondary":{"usedPercent":20,"windowDurationMins":10080}},"codex_other":{"planType":"pro","primary":{"usedPercent":50,"windowDurationMins":43200}}}}});
         let windows = parse_codex_response(&value).unwrap();
-        assert_eq!(windows.len(), 3);
+        assert_eq!(windows.len(), 2);
         assert_eq!(windows[0].remaining_percent, Some(0.0));
         assert!(windows[0].resets_at.is_some());
         assert_eq!(windows[0].label, "5時間枠");
         assert_eq!(windows[1].label, "週間枠");
-        assert_eq!(windows[2].label, "codex_other · 月間枠");
         assert_eq!(
             parse_codex_plan_name(&value).as_deref(),
             Some("ChatGPT Pro")
@@ -454,6 +472,17 @@ mod tests {
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].kind, WindowKind::Weekly);
         assert_eq!(windows[0].label, "週間枠");
+    }
+
+    #[test]
+    fn 内部モデル枠より通常の週間枠を採用する() {
+        let value = serde_json::json!({"result":{"rateLimitsByLimitId":{"base_model_inference":{"limitId":"base_model_inference","limitName":"gpt-reserve","planType":"prolite","primary":{"usedPercent":0,"windowDurationMins":10080,"resetsAt":1789124232}},"codex":{"limitId":"codex","planType":"prolite","primary":{"usedPercent":48,"windowDurationMins":10080,"resetsAt":1788748243}}}}});
+        let windows = parse_codex_response(&value).unwrap();
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].kind, WindowKind::Weekly);
+        assert_eq!(windows[0].label, "週間枠");
+        assert_eq!(windows[0].used_percent, Some(48.0));
+        assert_eq!(windows[0].remaining_percent, Some(52.0));
     }
 
     #[test]

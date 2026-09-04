@@ -1,4 +1,4 @@
-import type { ProviderStatus, UsageSource, UsageWindow } from "./contracts";
+import type { ProviderStatus, ProviderUsage, UsageSource, UsageWindow } from "./contracts";
 
 export type RemainingTone = "good" | "warning" | "critical" | "unknown";
 
@@ -56,6 +56,21 @@ export const isResetPending = (usageWindow: UsageWindow, now = new Date()) => {
   const resetAt = new Date(usageWindow.resetsAt);
   if (Number.isNaN(resetAt.valueOf()) || resetAt > now) return false;
   return true;
+};
+
+export const primaryUsageWindow = (provider: ProviderUsage): UsageWindow | null => {
+  if (provider.windows.length === 0) return null;
+  if (provider.id !== "codex") return provider.windows[0];
+
+  const publicWindows = provider.windows.filter((window) => !window.label.includes(" · "));
+  const findPublicWindow = (kind: string) => publicWindows.find((window) => window.kind === kind);
+  if (provider.hasFiveHourLimit === false) {
+    return findPublicWindow("weekly") ?? publicWindows[0] ?? provider.windows[0];
+  }
+  if (provider.hasFiveHourLimit === true) {
+    return findPublicWindow("five-hour") ?? findPublicWindow("weekly") ?? publicWindows[0] ?? provider.windows[0];
+  }
+  return findPublicWindow("five-hour") ?? findPublicWindow("weekly") ?? publicWindows[0] ?? provider.windows[0];
 };
 
 export const moveProviderOrder = (order: string[], index: number, direction: -1 | 1) => {

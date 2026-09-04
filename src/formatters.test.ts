@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatRelativeTime, isResetPending, moveProviderOrder, remainingTone } from "./formatters";
+import type { ProviderUsage } from "./contracts";
+import { formatDateTime, formatRelativeTime, isResetPending, moveProviderOrder, primaryUsageWindow, remainingTone } from "./formatters";
 
 describe("表示ロジック", () => {
   it("残量を閾値ごとの色に分類する", () => {
@@ -36,5 +37,62 @@ describe("表示ロジック", () => {
     expect(isResetPending({ kind: "daily", label: "日次", usedPercent: null, remainingPercent: null, resetsAt: "2026-08-29T09:00:00Z", windowDurationMinutes: 1440 }, now)).toBe(true);
     expect(isResetPending({ kind: "daily", label: "日次", usedPercent: 20, remainingPercent: 80, resetsAt: "2026-08-29T09:00:00Z", windowDurationMinutes: 1440 }, now)).toBe(true);
     expect(isResetPending({ kind: "daily", label: "日次", usedPercent: 20, remainingPercent: 80, resetsAt: "2026-08-29T11:00:00Z", windowDurationMinutes: 1440 }, now)).toBe(false);
+  });
+
+  it("5時間枠がないCodexは内部枠より通常の週間usageを代表表示する", () => {
+    const provider: ProviderUsage = {
+      id: "codex",
+      displayName: "Codex",
+      planName: "ChatGPT Pro",
+      hasFiveHourLimit: false,
+      status: "fresh",
+      source: "app-server",
+      updatedAt: "2026-09-04T10:00:00Z",
+      lastError: null,
+      windows: [
+        { kind: "weekly", label: "base_model_inference · 週間枠", usedPercent: 0, remainingPercent: 100, resetsAt: null, windowDurationMinutes: 10080 },
+        { kind: "weekly", label: "週間枠", usedPercent: 47, remainingPercent: 53, resetsAt: null, windowDurationMinutes: 10080 },
+      ],
+    };
+
+    expect(primaryUsageWindow(provider)?.remainingPercent).toBe(53);
+  });
+
+  it("5時間枠があるCodexは5時間枠を代表表示する", () => {
+    const provider: ProviderUsage = {
+      id: "codex",
+      displayName: "Codex",
+      planName: "ChatGPT Plus",
+      hasFiveHourLimit: true,
+      status: "fresh",
+      source: "app-server",
+      updatedAt: null,
+      lastError: null,
+      windows: [
+        { kind: "weekly", label: "週間枠", usedPercent: 20, remainingPercent: 80, resetsAt: null, windowDurationMinutes: 10080 },
+        { kind: "five-hour", label: "5時間枠", usedPercent: 60, remainingPercent: 40, resetsAt: null, windowDurationMinutes: 300 },
+      ],
+    };
+
+    expect(primaryUsageWindow(provider)?.remainingPercent).toBe(40);
+  });
+
+  it("OpenCode Goは従来どおり先頭の利用枠を代表表示する", () => {
+    const provider: ProviderUsage = {
+      id: "opencode-go",
+      displayName: "OpenCode Go",
+      planName: null,
+      hasFiveHourLimit: null,
+      status: "fresh",
+      source: "api",
+      updatedAt: null,
+      lastError: null,
+      windows: [
+        { kind: "five-hour", label: "rolling", usedPercent: 25, remainingPercent: 75, resetsAt: null, windowDurationMinutes: null },
+        { kind: "weekly", label: "weekly", usedPercent: 10, remainingPercent: 90, resetsAt: null, windowDurationMinutes: null },
+      ],
+    };
+
+    expect(primaryUsageWindow(provider)?.remainingPercent).toBe(75);
   });
 });
