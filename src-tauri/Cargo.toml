@@ -1,6 +1,6 @@
 [package]
 name = "usage-dock"
-version = "0.4.3"
+version = "0.4.4"
 description = "CodexとOpenCode Goの残量を常駐表示するWindowsアプリ"
 authors = ["UsageDock contributors"]
 edition = "2024"
