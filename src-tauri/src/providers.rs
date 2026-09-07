@@ -127,7 +127,7 @@ pub fn parse_codex_response(response: &Value) -> Option<Vec<UsageWindow>> {
             .collect::<Vec<_>>();
         if standard_limits.is_empty() {
             for (id, item) in map {
-                if !is_spark_limit(id, item) {
+                if !is_spark_limit(id, item) && !is_internal_limit(id, item) {
                     collect_limit_objects(item, Some(id.clone()), &mut limits);
                 }
             }
@@ -162,6 +162,15 @@ fn is_standard_codex_limit(id: &str, value: &Value) -> bool {
             .is_some_and(|value| value.eq_ignore_ascii_case("codex"))
 }
 
+fn is_internal_limit(id: &str, value: &Value) -> bool {
+    id.eq_ignore_ascii_case("base_model_inference")
+        || value
+            .get("limitId")
+            .or_else(|| value.get("limit_id"))
+            .and_then(Value::as_str)
+            .is_some_and(|id| id.eq_ignore_ascii_case("base_model_inference"))
+}
+
 fn is_spark_limit(id: &str, value: &Value) -> bool {
     if id.eq_ignore_ascii_case("codex_bengalfox") {
         return true;
@@ -182,6 +191,9 @@ fn is_spark_limit(id: &str, value: &Value) -> bool {
 }
 
 fn collect_limit_objects(value: &Value, hint: Option<String>, output: &mut Vec<(String, Value)>) {
+    if is_internal_limit(hint.as_deref().unwrap_or_default(), value) {
+        return;
+    }
     let Some(object) = value.as_object() else {
         return;
     };
@@ -193,7 +205,7 @@ fn collect_limit_objects(value: &Value, hint: Option<String>, output: &mut Vec<(
     }
     if let Some(map) = object.get("rateLimitsByLimitId").and_then(Value::as_object) {
         for (id, item) in map {
-            if !is_spark_limit(id, item) {
+            if !is_spark_limit(id, item) && !is_internal_limit(id, item) {
                 collect_limit_objects(item, Some(id.clone()), output);
             }
         }
@@ -483,6 +495,14 @@ mod tests {
         assert_eq!(windows[0].label, "週間枠");
         assert_eq!(windows[0].used_percent, Some(48.0));
         assert_eq!(windows[0].remaining_percent, Some(52.0));
+    }
+
+    #[test]
+    fn 通常枠が欠けても内部モデル枠を代用しない() {
+        let value = serde_json::json!({"rateLimitsByLimitId":{"base_model_inference":{"primary":{"usedPercent":0,"windowDurationMins":10080}}}});
+        assert!(parse_codex_response(&value).is_none());
+        let value = serde_json::json!({"rateLimits":{"limitId":"base_model_inference","primary":{"usedPercent":0,"windowDurationMins":10080}}});
+        assert!(parse_codex_response(&value).is_none());
     }
 
     #[test]

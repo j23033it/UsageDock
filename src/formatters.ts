@@ -58,19 +58,24 @@ export const isResetPending = (usageWindow: UsageWindow, now = new Date()) => {
   return true;
 };
 
-export const primaryUsageWindow = (provider: ProviderUsage): UsageWindow | null => {
-  if (provider.windows.length === 0) return null;
-  if (provider.id !== "codex") return provider.windows[0];
+export const visibleUsageWindows = (provider: ProviderUsage): UsageWindow[] => provider.id === "codex"
+  ? provider.windows.filter((window) => !/base_model_inference|gpt-reserve/i.test(window.label))
+  : provider.windows;
 
-  const publicWindows = provider.windows.filter((window) => !window.label.includes(" · "));
+export const primaryUsageWindow = (provider: ProviderUsage): UsageWindow | null => {
+  const windows = visibleUsageWindows(provider);
+  if (windows.length === 0) return null;
+  if (provider.id !== "codex") return windows[0];
+
+  const publicWindows = windows.filter((window) => !window.label.includes(" · "));
   const findPublicWindow = (kind: string) => publicWindows.find((window) => window.kind === kind);
   if (provider.hasFiveHourLimit === false) {
-    return findPublicWindow("weekly") ?? publicWindows[0] ?? provider.windows[0];
+    return findPublicWindow("weekly") ?? publicWindows[0] ?? windows[0];
   }
   if (provider.hasFiveHourLimit === true) {
-    return findPublicWindow("five-hour") ?? findPublicWindow("weekly") ?? publicWindows[0] ?? provider.windows[0];
+    return findPublicWindow("five-hour") ?? findPublicWindow("weekly") ?? publicWindows[0] ?? windows[0];
   }
-  return findPublicWindow("five-hour") ?? findPublicWindow("weekly") ?? publicWindows[0] ?? provider.windows[0];
+  return findPublicWindow("five-hour") ?? findPublicWindow("weekly") ?? publicWindows[0] ?? windows[0];
 };
 
 export const moveProviderOrder = (order: string[], index: number, direction: -1 | 1) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProviderUsage } from "./contracts";
-import { formatDateTime, formatRelativeTime, isResetPending, moveProviderOrder, primaryUsageWindow, remainingTone } from "./formatters";
+import { formatDateTime, formatRelativeTime, isResetPending, moveProviderOrder, primaryUsageWindow, visibleUsageWindows, remainingTone } from "./formatters";
 
 describe("表示ロジック", () => {
   it("残量を閾値ごとの色に分類する", () => {
@@ -56,6 +56,10 @@ describe("表示ロジック", () => {
     };
 
     expect(primaryUsageWindow(provider)?.remainingPercent).toBe(53);
+    expect(visibleUsageWindows(provider).map((window) => window.label)).toEqual(["週間枠"]);
+    provider.windows = provider.windows.slice(0, 1);
+    expect(visibleUsageWindows(provider)).toEqual([]);
+    expect(primaryUsageWindow(provider)).toBeNull();
   });
 
   it("5時間枠があるCodexは5時間枠を代表表示する", () => {
