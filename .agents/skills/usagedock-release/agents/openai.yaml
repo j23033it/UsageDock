@@ -1,0 +1,3 @@
+interface:
+  display_name: "UsageDockの開発・公開・更新確認"
+  short_description: "このリポジトリの修正から署名付き公開と通常環境での実機更新まで確認する"
