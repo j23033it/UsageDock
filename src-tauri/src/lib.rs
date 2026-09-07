@@ -18,7 +18,7 @@ use std::{
 };
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, LogicalSize, Manager, PhysicalPosition, WindowEvent};
+use tauri::{Emitter, Manager, PhysicalPosition};
 use tauri_plugin_autostart::ManagerExt as AutoStartManagerExt;
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
@@ -32,6 +32,7 @@ struct PendingCodexLogin {
 struct BackendData {
     settings: AppSettings,
     snapshot: DashboardSnapshot,
+    connected: HashSet<ProviderId>,
     refreshing: HashSet<ProviderId>,
     notified: HashSet<(ProviderId, model::WindowKind, u8)>,
     widget_expanded: bool,
@@ -81,19 +82,12 @@ fn empty_provider(id: ProviderId) -> ProviderUsage {
     }
 }
 
-fn provider_enabled(settings: &AppSettings, id: &ProviderId) -> bool {
-    match id {
-        ProviderId::Codex => settings.codex_enabled,
-        ProviderId::OpenCodeGo => settings.open_code_go_enabled,
-    }
-}
-
 fn reconcile_providers(data: &mut BackendData) {
     data.snapshot
         .providers
-        .retain(|provider| provider_enabled(&data.settings, &provider.id));
+        .retain(|provider| data.connected.contains(&provider.id));
     for id in data.settings.provider_order.clone() {
-        if provider_enabled(&data.settings, &id)
+        if data.connected.contains(&id)
             && !data
                 .snapshot
                 .providers
@@ -193,7 +187,7 @@ fn collect_notifications(
 async fn refresh_one(app: &tauri::AppHandle, state: &BackendState, id: ProviderId) {
     let settings = {
         let mut data = state.data.lock().expect("状態ロック");
-        if !data.refreshing.insert(id.clone()) {
+        if !data.connected.contains(&id) || !data.refreshing.insert(id.clone()) {
             return;
         }
         if let Some(provider) = data
@@ -249,7 +243,7 @@ fn apply_refresh_result(
     result: Result<FetchResult, String>,
 ) -> Vec<(String, f64, u8)> {
     data.refreshing.remove(id);
-    if !provider_enabled(&data.settings, id) {
+    if !data.connected.contains(id) {
         reconcile_providers(data);
         return Vec::new();
     }
@@ -290,15 +284,13 @@ fn apply_refresh_result(
 }
 
 async fn refresh_all(app: &tauri::AppHandle, state: &BackendState) -> DashboardSnapshot {
+    emit_connections(app, state).await;
     let ids = {
         let data = state.data.lock().expect("状態ロック");
         data.settings
             .provider_order
             .iter()
-            .filter(|id| match id {
-                ProviderId::Codex => data.settings.codex_enabled,
-                ProviderId::OpenCodeGo => data.settings.open_code_go_enabled,
-            })
+            .filter(|id| data.connected.contains(id))
             .cloned()
             .collect::<Vec<_>>()
     };
@@ -309,14 +301,18 @@ async fn refresh_all(app: &tauri::AppHandle, state: &BackendState) -> DashboardS
 }
 
 fn get_dashboard_inner(state: &BackendState) -> DashboardSnapshot {
-    let mut data = state.data.lock().expect("状態ロック");
-    reconcile_providers(&mut data);
-    for provider in &mut data.snapshot.providers {
+    let data = state.data.lock().expect("状態ロック");
+    // 起動直後の接続確認を待つ間も、保存済みの正常値は破棄しない。
+    let mut snapshot = data.snapshot.clone();
+    snapshot
+        .providers
+        .retain(|provider| data.connected.contains(&provider.id));
+    for provider in &mut snapshot.providers {
         if !matches!(provider.status, ProviderStatus::Refreshing) {
             provider.status = classify(provider);
         }
     }
-    data.snapshot.clone()
+    snapshot
 }
 
 fn reposition_widget(window: &tauri::WebviewWindow) {
@@ -368,13 +364,81 @@ fn apply_widget_dimensions(
     } else {
         collapsed_width
     };
+    let count = window
+        .app_handle()
+        .try_state::<BackendState>()
+        .map(|state| state.data.lock().expect("状態ロック").connected.len())
+        .unwrap_or(0) as u32;
+    let row_height = match settings.widget_size.as_str() {
+        "s" => 60,
+        "l" => 78,
+        _ => 66,
+    };
+    let base_height = base_height - row_height * (2 - count.min(2));
     let scale = u32::from(settings.scale_percent);
     let width = (base_width * scale / 100).max(1);
     let height = (base_height * scale / 100).max(1);
-    window
-        .set_size(LogicalSize::new(f64::from(width), f64::from(height)))
-        .map_err(|_| "ウィジェットサイズを変更できませんでした".to_string())?;
-    reposition_widget(window);
+    // 右端を固定したまま位置とサイズを一度に変更し、画面外へ飛ぶ中間状態をなくす。
+    let scale_factor = window.scale_factor().map_err(|error| error.to_string())?;
+    let physical_width = (f64::from(width) * scale_factor).round() as u32;
+    let physical_height = (f64::from(height) * scale_factor).round() as u32;
+    let monitor = window
+        .primary_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or("モニターを取得できませんでした")?;
+    let (x, y) = widget_position(
+        monitor.position().x,
+        monitor.position().y,
+        monitor.size().width,
+        monitor.size().height,
+        physical_width,
+        physical_height,
+    );
+    if window.inner_size().ok() == Some(tauri::PhysicalSize::new(physical_width, physical_height))
+        && window.outer_position().ok() == Some(PhysicalPosition::new(x, y))
+    {
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn SetWindowPos(
+                hwnd: *mut std::ffi::c_void,
+                after: *mut std::ffi::c_void,
+                x: i32,
+                y: i32,
+                width: i32,
+                height: i32,
+                flags: u32,
+            ) -> i32;
+        }
+        let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+        // HWNDは生存中のウィンドウから取得。Z順とフォーカスは変更しない。
+        let result = unsafe {
+            SetWindowPos(
+                hwnd.0 as _,
+                std::ptr::null_mut(),
+                x,
+                y,
+                physical_width as i32,
+                physical_height as i32,
+                0x0004 | 0x0010,
+            )
+        };
+        if result == 0 {
+            return Err("ウィジェットサイズを変更できませんでした".into());
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        window
+            .set_position(PhysicalPosition::new(x, y))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_size(tauri::PhysicalSize::new(physical_width, physical_height))
+            .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -465,6 +529,33 @@ async fn connection_overview(state: &BackendState) -> ConnectionOverview {
 
 async fn emit_connections(app: &tauri::AppHandle, state: &BackendState) {
     let overview = connection_overview(state).await;
+    let snapshot = {
+        let mut data = state.data.lock().expect("状態ロック");
+        for (id, status) in [
+            (ProviderId::Codex, &overview.codex.status),
+            (ProviderId::OpenCodeGo, &overview.open_code_go.status),
+        ] {
+            match status {
+                ConnectionStatus::Connected => {
+                    data.connected.insert(id);
+                }
+                ConnectionStatus::Disconnected => {
+                    data.connected.remove(&id);
+                }
+                _ => {}
+            }
+        }
+        reconcile_providers(&mut data);
+        data.snapshot.clone()
+    };
+    let (settings, expanded) = {
+        let data = state.data.lock().expect("状態ロック");
+        (data.settings.clone(), data.widget_expanded)
+    };
+    if let Some(widget) = app.get_webview_window("widget") {
+        let _ = apply_widget_dimensions(&widget, &settings, expanded);
+    }
+    let _ = app.emit("usage-updated", snapshot);
     let _ = app.emit("connections-updated", overview);
 }
 
@@ -529,6 +620,7 @@ async fn start_codex_login(
                 .filter(|error| !codex::was_cancelled(error))
                 .cloned();
         }
+        emit_connections(&background_app, &background_state).await;
         if result.is_ok() {
             refresh_one(&background_app, &background_state, ProviderId::Codex).await;
         }
@@ -574,6 +666,7 @@ async fn set_codex_api_key(
     };
     codex::login_api_key(settings.codex_path.as_deref(), &state.codex_home, api_key).await?;
     state.data.lock().expect("状態ロック").last_codex_auth_error = None;
+    emit_connections(&app, &state).await;
     refresh_one(&app, &state, ProviderId::Codex).await;
     emit_connections(&app, &state).await;
     Ok(())
@@ -595,14 +688,8 @@ async fn disconnect_codex(
     let snapshot = {
         let mut data = state.data.lock().expect("状態ロック");
         data.last_codex_auth_error = None;
-        if let Some(provider) = data
-            .snapshot
-            .providers
-            .iter_mut()
-            .find(|provider| provider.id == ProviderId::Codex)
-        {
-            *provider = empty_provider(ProviderId::Codex);
-        }
+        data.connected.remove(&ProviderId::Codex);
+        reconcile_providers(&mut data);
         let snapshot = data.snapshot.clone();
         state.save_snapshot(&snapshot)?;
         snapshot
@@ -653,6 +740,7 @@ async fn set_opencode_api_key(
     let api_key = api_key.trim().to_string();
     fetch_opencode(api_key.clone()).await?;
     storage::save_opencode_key(&api_key)?;
+    emit_connections(&app, &state).await;
     refresh_one(&app, &state, ProviderId::OpenCodeGo).await;
     emit_connections(&app, &state).await;
     Ok(())
@@ -666,14 +754,8 @@ async fn disconnect_opencode(
     storage::delete_opencode_key()?;
     let snapshot = {
         let mut data = state.data.lock().expect("状態ロック");
-        if let Some(provider) = data
-            .snapshot
-            .providers
-            .iter_mut()
-            .find(|provider| provider.id == ProviderId::OpenCodeGo)
-        {
-            *provider = empty_provider(ProviderId::OpenCodeGo);
-        }
+        data.connected.remove(&ProviderId::OpenCodeGo);
+        reconcile_providers(&mut data);
         let snapshot = data.snapshot.clone();
         state.save_snapshot(&snapshot)?;
         snapshot
@@ -752,6 +834,7 @@ pub fn run() {
                 data: Arc::new(Mutex::new(BackendData {
                     settings: storage::load_settings(&config_dir.join("settings.json")),
                     snapshot: initial_snapshot(&config_dir.join("snapshot.json")),
+                    connected: HashSet::new(),
                     refreshing: HashSet::new(),
                     notified: HashSet::new(),
                     widget_expanded: false,
@@ -834,14 +917,6 @@ pub fn run() {
             });
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if matches!(event, WindowEvent::Resized(_))
-                && window.label() == "widget"
-                && let Some(webview) = window.app_handle().get_webview_window("widget")
-            {
-                reposition_widget(&webview);
-            }
-        })
         .invoke_handler(tauri::generate_handler![
             get_dashboard,
             refresh_usage,
@@ -922,17 +997,15 @@ mod tests {
     }
 
     #[test]
-    fn 無効化後に完了した取得結果を安全に破棄する() {
-        let settings = AppSettings {
-            codex_enabled: false,
-            ..Default::default()
-        };
+    fn 接続解除後の取得結果を破棄し再接続で表示を戻す() {
+        let settings = AppSettings::default();
         let mut data = BackendData {
             settings,
             snapshot: DashboardSnapshot {
                 providers: vec![empty_provider(ProviderId::Codex)],
                 refreshed_at: now_iso(),
             },
+            connected: HashSet::from([ProviderId::OpenCodeGo]),
             refreshing: HashSet::from([ProviderId::Codex]),
             notified: HashSet::new(),
             widget_expanded: false,
@@ -963,6 +1036,13 @@ mod tests {
                 .iter()
                 .any(|provider| provider.id == ProviderId::OpenCodeGo)
         );
+        data.connected.insert(ProviderId::Codex);
+        reconcile_providers(&mut data);
+        assert_eq!(data.snapshot.providers.len(), 2);
+        assert_eq!(data.snapshot.providers[0].id, ProviderId::Codex);
+        data.connected.clear();
+        reconcile_providers(&mut data);
+        assert!(data.snapshot.providers.is_empty());
     }
 
     #[test]

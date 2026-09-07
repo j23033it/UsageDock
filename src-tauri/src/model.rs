@@ -191,8 +191,6 @@ pub struct AppSettings {
     pub auto_start: bool,
     pub start_in_background: bool,
     pub provider_order: Vec<ProviderId>,
-    pub codex_enabled: bool,
-    pub open_code_go_enabled: bool,
     pub notification_thresholds: NotificationThresholds,
     pub codex_path: Option<String>,
     pub force_compatibility_mode: bool,
@@ -208,8 +206,6 @@ impl Default for AppSettings {
             auto_start: false,
             start_in_background: true,
             provider_order: vec![ProviderId::Codex, ProviderId::OpenCodeGo],
-            codex_enabled: true,
-            open_code_go_enabled: true,
             notification_thresholds: NotificationThresholds::default(),
             codex_path: None,
             force_compatibility_mode: false,
@@ -299,10 +295,8 @@ mod tests {
     }
 
     #[test]
-    fn 初期状態で両プロバイダーを表示する() {
+    fn 初期状態の表示順に両プロバイダーを含める() {
         let settings = AppSettings::default();
-        assert!(settings.codex_enabled);
-        assert!(settings.open_code_go_enabled);
         assert_eq!(
             settings.provider_order,
             vec![ProviderId::Codex, ProviderId::OpenCodeGo]

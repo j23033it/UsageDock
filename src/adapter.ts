@@ -167,15 +167,19 @@ export const createMockAdapter = (): AppAdapter => {
     openCodeGo: { status: "connected" },
   };
   const connectionListeners = new Set<(value: ConnectionOverview) => void>();
-  const publishConnections = () => connectionListeners.forEach((listener) => listener(structuredClone(connections)));
+  const connectedSnapshot = () => ({ ...snapshot, providers: snapshot.providers.filter((provider) => provider.id === "codex" ? connections.codex.status === "connected" : connections.openCodeGo.status === "connected") });
+  const publishConnections = () => {
+    connectionListeners.forEach((listener) => listener(structuredClone(connections)));
+    listeners.forEach((listener) => listener(connectedSnapshot()));
+  };
   return {
     getWindowLabel: () => (typeof document !== "undefined" && document.body.dataset.view === "settings" ? "settings" : "widget"),
     getAppVersion: async () => "開発版",
-    getDashboard: async () => snapshot,
+    getDashboard: async () => connectedSnapshot(),
     refreshUsage: async () => {
       snapshot = mockSnapshot();
-      listeners.forEach((listener) => listener(snapshot));
-      return snapshot;
+      listeners.forEach((listener) => listener(connectedSnapshot()));
+      return connectedSnapshot();
     },
     getSettings: async () => structuredClone(settings),
     saveSettings: async (value) => {

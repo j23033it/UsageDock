@@ -2,9 +2,9 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockAdapter, type AppAdapter } from "./adapter";
-import { messageFromError, SettingsApp } from "./App";
+import { messageFromError, SettingsApp, WidgetApp } from "./App";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,6 +37,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root?.unmount());
   container.remove();
+  vi.useRealTimers();
 });
 
 describe("設定画面", () => {
@@ -100,5 +101,64 @@ describe("設定画面", () => {
     expect(container.textContent).toContain("更新ファイルの署名を検証できませんでした。");
     expect(buttonWithText("更新を再試行")).toBeDefined();
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  });
+});
+
+
+describe("常駐ウィジェット", () => {
+  const renderWidget = async (adapter: AppAdapter) => {
+    root = createRoot(container);
+    await act(async () => { root.render(<WidgetApp adapter={adapter} />); });
+    await settleEffects();
+  };
+
+  it("接続解除で詳細とリングが消え、再接続で再表示する", async () => {
+    const adapter = createMockAdapter();
+    const expanded = vi.fn(async () => undefined);
+    adapter.setWidgetExpanded = expanded;
+    await renderWidget(adapter);
+    expect(container.querySelectorAll(".provider-button")).toHaveLength(2);
+    act(() => container.querySelector<HTMLButtonElement>(".provider-button")?.click());
+    expect(container.querySelector(".widget-detail")).not.toBeNull();
+    await act(async () => { await adapter.disconnectCodex(); });
+    expect(container.querySelectorAll(".provider-button")).toHaveLength(1);
+    expect(container.querySelector(".widget-detail")).toBeNull();
+    expect(expanded).toHaveBeenLastCalledWith(false);
+    await act(async () => { await adapter.disconnectOpencode(); await adapter.refreshUsage(); });
+    expect(container.querySelectorAll(".provider-button")).toHaveLength(0);
+    expect(container.querySelector('[aria-label="設定を開く"]')).not.toBeNull();
+    await act(async () => { await adapter.setCodexApiKey("test"); });
+    expect(container.querySelectorAll(".provider-button")).toHaveLength(1);
+  });
+
+  it("詳細から外へ出てすぐ戻っても古いタイマーで閉じない", async () => {
+    vi.useFakeTimers();
+    const adapter = createMockAdapter();
+    const expanded = vi.fn(async () => undefined);
+    adapter.setWidgetExpanded = expanded;
+    await renderWidget(adapter);
+    const button = container.querySelector<HTMLButtonElement>(".provider-button")!;
+    act(() => { button.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
+    act(() => { vi.advanceTimersByTime(150); });
+    const detail = container.querySelector(".widget-detail")!;
+    expect(detail).not.toBeNull();
+    act(() => { detail.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body })); });
+    act(() => { vi.advanceTimersByTime(100); });
+    act(() => { button.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })); });
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(container.querySelector(".widget-detail")).not.toBeNull();
+    expect(expanded).toHaveBeenCalledTimes(1);
+    act(() => { button.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body })); });
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(container.querySelector(".widget-detail")).toBeNull();
+    expect(expanded).toHaveBeenLastCalledWith(false);
+  });
+
+  it("プロバイダー設定から表示チェックを取り除く", async () => {
+    await renderSettings(createMockAdapter());
+    act(() => buttonWithText("プロバイダー")?.click());
+    await settleEffects();
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    expect(container.textContent).toContain("接続中のプロバイダーが自動で表示されます");
   });
 });

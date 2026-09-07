@@ -78,8 +78,6 @@ export type AppSettings = {
   autoStart: boolean;
   startInBackground: boolean;
   providerOrder: string[];
-  codexEnabled: boolean;
-  openCodeGoEnabled: boolean;
   notificationThresholds: NotificationThresholds;
   codexPath: string | null;
   forceCompatibilityMode: boolean;
@@ -93,8 +91,6 @@ export const defaultSettings: AppSettings = {
   autoStart: false,
   startInBackground: true,
   providerOrder: ["codex", "opencode-go"],
-  codexEnabled: true,
-  openCodeGoEnabled: true,
   notificationThresholds: {
     enabled: true,
     warningPercent: 20,
