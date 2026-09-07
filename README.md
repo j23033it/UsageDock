@@ -92,12 +92,14 @@ npm run check
 | `npm run build` | TypeScriptの型検査とViteビルド |
 | `cargo test --manifest-path src-tauri/Cargo.toml` | Rustのユニットテスト |
 
-### Windowsインストーラーを生成する
+### 更新版を公開する
 
 ```powershell
 $releaseVersion = Read-Host '新しいバージョン（例: 1.2.3）'
 npm run release -- $releaseVersion -GitHubRepository j23033it/UsageDock-Releases
 ```
+
+今後の更新はGitHub Releaseへの公開に統一します。同じ番号の単体EXEを渡す運用は行いません。
 
 リリース前に、機能変更と検証をコミットして作業ツリーをクリーンにします。引数には現在より大きい配布バージョンと、配布に使うGitHubリポジトリの `owner/repository` を指定してください。
 
@@ -112,6 +114,8 @@ npm run tauri signer generate -- --ci --write-keys "$env:USERPROFILE\.tauri\usag
 ```
 
 [UsageDock-Releases](https://github.com/j23033it/UsageDock-Releases) のGitHub Release `v<version>` へ `UsageDock-x64-setup.exe`、同名の `.sig`、`latest.json` を配置すると、アプリの更新ボタンから取得できます。更新専用リポジトリへソースコードや配布物の履歴はコミットしません。
+
+アップロードはドラフトで行い、セットアップEXE・署名・`latest.json` の3ファイルを揃えてから最新版として公開します。公開後はアプリの更新先にある `latest.json` のバージョンと、公開EXEのSHA-256がローカルの `release/release.json` と一致することを確認します。
 
 成功後は変更された `src-tauri\Cargo.toml` と `src-tauri\Cargo.lock` を確認してコミットし、配布版と同じ番号のローカルGitタグを付けます。過去版はGitで追跡し、ローカルに複数のインストーラーを保管しません。
 
