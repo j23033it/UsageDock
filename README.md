@@ -1,5 +1,7 @@
 # UsageDock
 
+この公開リポジトリではUsageDockのソースコードと署名済みWindows更新ファイルを管理しています。配布ファイルは[GitHub Releases](https://github.com/j23033it/UsageDock-Releases/releases)から取得できます。
+
 CodexとOpenCode Goの利用可能な残量を、Windows 11の画面端でいつでも確認できる常駐ウィジェットです。
 
 細いレールには各サービスの残量だけを表示し、ホバーまたはクリックすると利用枠・リセット時刻・データの取得状態を展開します。作業中にダッシュボードを開き直さなくても、AIサービスの残量を視界の端で把握できます。
