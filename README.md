@@ -1,6 +1,6 @@
 # UsageDock
 
-この公開リポジトリではUsageDockのソースコードと署名済みWindows更新ファイルを管理しています。配布ファイルは[GitHub Releases](https://github.com/j23033it/UsageDock-Releases/releases)から取得できます。
+この公開リポジトリではUsageDockのソースコードと署名済みWindows更新ファイルを管理しています。配布ファイルは[GitHub Releases](https://github.com/j23033it/UsageDock/releases)から取得できます。
 
 CodexとOpenCode Goの利用可能な残量を、Windows 11の画面端でいつでも確認できる常駐ウィジェットです。
 
@@ -98,7 +98,7 @@ npm run check
 
 ```powershell
 $releaseVersion = Read-Host '新しいバージョン（例: 1.2.3）'
-npm run release -- $releaseVersion -GitHubRepository j23033it/UsageDock-Releases
+npm run release -- $releaseVersion -GitHubRepository j23033it/UsageDock
 ```
 
 今後の更新はGitHub Releaseへの公開に統一します。同じ番号の単体EXEを渡す運用は行いません。
@@ -115,7 +115,7 @@ npm run release -- $releaseVersion -GitHubRepository j23033it/UsageDock-Releases
 npm run tauri signer generate -- --ci --write-keys "$env:USERPROFILE\.tauri\usagedock.key"
 ```
 
-[UsageDock-Releases](https://github.com/j23033it/UsageDock-Releases) のGitHub Release `v<version>` へ `UsageDock-x64-setup.exe`、同名の `.sig`、`latest.json` を配置すると、アプリの更新ボタンから取得できます。更新専用リポジトリへソースコードや配布物の履歴はコミットしません。
+[UsageDock](https://github.com/j23033it/UsageDock) のGitHub Release `v<version>` へ `UsageDock-x64-setup.exe`、同名の `.sig`、`latest.json` を配置すると、アプリの更新ボタンから取得できます。ソースコードは同じリポジトリの `main` で管理します。
 
 アップロードはドラフトで行い、セットアップEXE・署名・`latest.json` の3ファイルを揃えてから最新版として公開します。公開後はアプリの更新先にある `latest.json` のバージョンと、公開EXEのSHA-256がローカルの `release/release.json` と一致することを確認します。
 

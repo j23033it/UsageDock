@@ -5,7 +5,7 @@
 ## 1. 公開前
 
 - `src-tauri/Cargo.toml` が番号の唯一の編集元。`Cargo.lock` は生成に追従する。`package.json` と `tauri.conf.json` に番号を追加しない。
-- `gh release list --repo j23033it/UsageDock-Releases --limit 10` と `git tag --list` で現状を確認する。現在のローカル版と公開版の両方より大きい未使用番号を選ぶ。
+- `gh release list --repo j23033it/UsageDock --limit 10` と `git tag --list` で現状を確認する。現在のローカル版と公開版の両方より大きい未使用番号を選ぶ。
 - 同じ番号のリリースが存在したら状態を読む。自分の今回のドラフトなら内容を照合して再開し、公開済みなら上書きしない。タイムアウトだけで作成を再試行しない。
 - `scripts/release.ps1`、`src-tauri/src/updates.rs` の現行実装を確認する。署名鍵はリポジトリ外の `%USERPROFILE%/.tauri/usagedock.key`。鍵を表示・コピー・再生成しない。
 - 実装をコミットして作業ツリーをクリーンにする。リリーススクリプトがフロントエンドテスト、型検査・ビルド、Rustのreleaseテスト、NSIS生成、署名と実成果物の署名検証を行う。直前に同じ検証を重複実行する必要はない。
@@ -13,7 +13,7 @@
 ## 2. 配布物を作る
 
 ```powershell
-npm run release -- $releaseVersion -GitHubRepository j23033it/UsageDock-Releases
+npm run release -- $releaseVersion -GitHubRepository j23033it/UsageDock
 if ($LASTEXITCODE -ne 0) { throw '配布物の生成に失敗しました' }
 powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/usagedock-release/scripts/verify-release.ps1 -Version $releaseVersion -Stage Local
 if ($LASTEXITCODE -ne 0) { throw 'ローカル成果物が一致しません' }
@@ -28,9 +28,9 @@ if ($LASTEXITCODE -ne 0) { throw 'ローカル成果物が一致しません' }
 ## 3. 下書きへ配置して公開する
 
 ```powershell
-gh release create "v$releaseVersion" --repo j23033it/UsageDock-Releases --draft --title "UsageDock $releaseVersion" --notes-file release/release-notes.md
+gh release create "v$releaseVersion" --repo j23033it/UsageDock --draft --title "UsageDock $releaseVersion" --notes-file release/release-notes.md
 if ($LASTEXITCODE -ne 0) { throw '下書きの状態を確認してください' }
-gh release upload "v$releaseVersion" release/UsageDock-x64-setup.exe release/UsageDock-x64-setup.exe.sig release/latest.json --repo j23033it/UsageDock-Releases
+gh release upload "v$releaseVersion" release/UsageDock-x64-setup.exe release/UsageDock-x64-setup.exe.sig release/latest.json --repo j23033it/UsageDock
 if ($LASTEXITCODE -ne 0) { throw 'アップロードの状態を確認してください' }
 powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/usagedock-release/scripts/verify-release.ps1 -Version $releaseVersion -Stage Draft
 if ($LASTEXITCODE -ne 0) { throw '公開前の照合に失敗しました' }
@@ -41,7 +41,7 @@ if ($LASTEXITCODE -ne 0) { throw '公開前の照合に失敗しました' }
 成功した生成処理が変更した `Cargo.toml` と `Cargo.lock` の差分を確認し、日本語メッセージでコミットする。同じ番号のローカル注釈付きタグをそのコミットへ付ける。ソース用リモートへのpushは不要。
 
 ```powershell
-gh release edit "v$releaseVersion" --repo j23033it/UsageDock-Releases --draft=false --latest
+gh release edit "v$releaseVersion" --repo j23033it/UsageDock --draft=false --latest
 if ($LASTEXITCODE -ne 0) { throw '公開結果を確認してください' }
 powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/usagedock-release/scripts/verify-release.ps1 -Version $releaseVersion -Stage Published
 if ($LASTEXITCODE -ne 0) { throw '公開先の照合に失敗しました' }

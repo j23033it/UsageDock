@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$Version,
@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\..'))
 $releaseRoot = Join-Path $repositoryRoot 'release'
-$repository = 'j23033it/UsageDock-Releases'
+$repository = 'j23033it/UsageDock'
 $endpoint = "https://github.com/$repository/releases/latest/download/latest.json"
 $artifactUrl = "https://github.com/$repository/releases/download/v$Version/UsageDock-x64-setup.exe"
 $utf8 = [Text.UTF8Encoding]::new($false)
